@@ -1,0 +1,29 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+#CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+
+#Global Arrays
+URLS=('http://sw-stash.freescale.net/scm/imx/fsl-arm-yocto-bsp.git'
+      'git://git.freescale.com/imx/fsl-arm-yocto-bsp.git'
+      'https://github.com/Freescale/fsl-community-bsp-platform')
+
+NAMES=('internal'
+       'public'
+       'community')
+
+
+

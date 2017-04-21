@@ -1,0 +1,543 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+usage() {
+cat << EOF
+Usage: $0 [options] [params]
+
+Linux Kernel build script for i.MX (NXP MPU)
+   - use "mydata" dir for own patches, configs and sources
+
+OPTIONS:
+   -h/--help   Show this message
+   -u/--updt   Clear sources and update local branch
+   -c/--clean  Clean sources (remove all uncomited changes)
+   -p/--patch  Create patch from working sources
+   -z/--zip    Compress build data into zip archive 
+   -m/--mcfg   Run menuconfig
+   -f          Include firmwares
+   -x          Use XDialog
+   -v          Verbose (print debug info)
+
+PARAMS:
+   -i/--img    Set Image Type (Image, uImage or zImage <default>)
+   -s/--surl   Set GitRepo URL for Linux SRC (optional)
+   -t/--btool  Set path for external toolchain (optional)
+   -a/--laddr  Set target LOADADDR as "0x........" (optional)
+
+EOF
+}
+
+# Get the params from arguments provided
+argparse "?|h|help c|clean m|mcfg p|patch u|updt f|fware z|zip x|xdialog v|verbose i|img s|surl t|btool a|laddr" $*
+if [ $? -eq 0 ]; then
+  echo
+  echo "Use: $0 -h/--help for usage description"
+  exit 1
+fi
+
+# Process help argument and exit
+[[ "$param_help" = "true" ]] && {
+    usage
+    exit 0
+}
+
+echo
+echo '***********************************************************'
+echo '*               Linux Kernel Compiler                     *'
+echo '***********************************************************'
+echo
+echo " For printing all usable options use \"build_kernel -h\""
+echo
+
+# ----------------------------------------------------------------
+# Make sure you are not root
+# ----------------------------------------------------------------
+if [ "$(id -u)" = "0" ]; then
+   eprint "This script can not be run as root"
+   exit 1
+fi
+
+# Check if instaled required packages and install it if doesn't
+check_package "build-essential"
+check_package "u-boot-tools"
+check_package "lzop"
+check_package "git"
+
+if [ "$param_xdialog" = "true" ]; then
+  check_package "zenity"
+  MENUCONFIG="xconfig"
+else
+  MENUCONFIG="menuconfig"
+fi
+
+KERNEL_CWD=$(pwd)
+
+# Internal files
+CONFIG_FILE=$KERNEL_CWD/build.cfg
+
+if [ -e $CONFIG_FILE ]; then
+  . $CONFIG_FILE
+
+  if [ "$PROJECT" != "KERNEL" ]; then
+    eprint " You are in $PROJECT directory, use the correct dir !"
+    exit 1
+  fi
+fi
+
+# ----------------------------------------------------------------
+# TOOLCHAIN INIT
+# ----------------------------------------------------------------
+# test toolchain argument if working
+if [ ! -z ${param_btool} ]; then
+  ${param_btool}gcc -v &>/dev/null
+  if [ $? -ne 0 ]; then
+    wprint " Compiler: ${param_btool} doesn't work,\n will be used internal !"
+  else
+    CROSS_COMPILER=${param_btool}
+  fi
+fi
+# search for internal toolchain if not explicitly specified
+if [ -z $CROSS_COMPILER ]; then
+  echo "[INFO ] Searching Toolchain ... please wait !"
+  find_toolchain "/opt /usr/bin /usr/sbin $HOME"
+  if [ -z $RET_VALUE ]; then
+    eprint "Toolchain not installed, please run \"build_toolchain\" first"
+    exit 1
+  fi
+  CROSS_COMPILER=$RET_VALUE
+fi
+
+# Default Kernel repos  
+if [ -z $KERNEL_URLS ]; then           
+  KERNEL_URLS=('http://sw-stash.freescale.net/scm/imx/linux-2.6-imx.git'
+               'git://git.freescale.com/imx/linux-2.6-imx.git'
+               'git://git.freescale.com/imx/linux-imx.git'
+               'https://github.com/Freescale/linux-fslc'
+               'https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git')
+fi
+
+# iMX load addresses
+if [ -z $KERNEL_LADDRS ]; then
+  KERNEL_LADDRS=("mxs=0x40008000" 
+                 "mx51=0x90008000" 
+                 "mx53=0x70008000" 
+                 "mx6sl=0x80008000" 
+                 "mx6sx=0x80008000"
+                 "mx6=0x10008000"  
+                 "mx7=0x80008000" 
+                 "vf=0x80008000")
+fi
+
+# Optional params
+[[ -z $param_surl  ]] || KERNEL_SRCURL=$param_surl
+[[ -z $param_img   ]] || KERNEL_IMAGE=$param_img
+[[ -z $param_laddr ]] || KERNEL_LADDR=$param_laddr
+
+# Default image format
+[[ -z $KERNEL_IMAGE ]] && KERNEL_IMAGE="zImage"
+
+if [ "${KERNEL_IMAGE}" != "Image"  -a \
+     "${KERNEL_IMAGE}" != "zImage" -a \
+     "${KERNEL_IMAGE}" != "uImage" ]; then
+    eprint " Unsuported value $KERNEL_IMAGE for argument -i/--img"
+    exit 1
+fi
+
+# Set Working dirs locations
+[[ -z $KERNEL_OUTDIR ]] && KERNEL_OUTDIR="$KERNEL_CWD/build"
+[[ -z $KERNEL_SRCDIR ]] && KERNEL_SRCDIR="$KERNEL_CWD/source"
+[[ -z $KERNEL_MYSDIR ]] && KERNEL_MYSDIR="$KERNEL_CWD/mydata/source"
+[[ -z $KERNEL_MYPDIR ]] && KERNEL_MYPDIR="$KERNEL_CWD/mydata/patch"
+[[ -z $KERNEL_MYCDIR ]] && KERNEL_MYCDIR="$KERNEL_CWD/mydata/config"
+[[ -z $KERNEL_STADIR ]] && KERNEL_STADIR="$KERNEL_CWD/.state"
+[[ -z $KERNEL_TMPDIR ]] && KERNEL_TMPDIR="$KERNEL_CWD/.cache"
+
+# Create Working dirs
+[[ -d $KERNEL_OUTDIR ]] || mkdir -p $KERNEL_OUTDIR
+[[ -d $KERNEL_MYSDIR ]] || mkdir -p $KERNEL_MYSDIR
+[[ -d $KERNEL_MYPDIR ]] || mkdir -p $KERNEL_MYPDIR
+[[ -d $KERNEL_MYCDIR ]] || mkdir -p $KERNEL_MYCDIR
+[[ -d $KERNEL_STADIR ]] || mkdir -p $KERNEL_STADIR
+[[ -d $KERNEL_TMPDIR ]] || mkdir -p $KERNEL_TMPDIR
+
+# Verbose outputs
+dprint "<< KERNEL Toolchain >>"
+dprint "Path: ${CROSS_COMPILER%/*}"
+dprint "Exec: ${CROSS_COMPILER##*/}"
+dprint "Version: $(${CROSS_COMPILER}gcc -dumpversion)"
+dprint "<< KERNEL Directories >>"
+dprint "ROOT DIR: $KERNEL_CWD"
+dprint "OUT  DIR: $KERNEL_OUTDIR"
+dprint "SRC  DIR: $KERNEL_SRCDIR"
+dprint "MY   DIR: $KERNEL_MYPDIR"
+dprint "STAT DIR: $KERNEL_STADIR"
+dprint "TEMP DIR: $KERNEL_TMPDIR"
+
+if [ ! -e $CONFIG_FILE ]; then
+  echo "PROJECT=KERNEL"                 > $CONFIG_FILE
+  echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+  rm -rf $KERNEL_TMPDIR && mkdir $KERNEL_TMPDIR
+  rm -rf $KERNEL_STADIR/*
+fi
+
+if [ -e $KERNEL_STADIR/cloned_repo ]; then
+  KERNEL_SRCURL=$(cat "$KERNEL_STADIR/cloned_repo")
+else
+  if [ -e $KERNEL_SRCDIR/.git/config ]; then
+    cd $KERNEL_SRCDIR
+    KERNEL_SRCURL=$(git config --get remote.origin.url)
+  else
+    if [ -z $KERNEL_SRCURL ]; then
+      if [ ${#KERNEL_URLS[@]} -gt 1 ]; then
+        list_dialog 'Select source repository' "${KERNEL_URLS[@]}"
+        KERNEL_SRCURL=$RET_VALUE
+      else
+        KERNEL_SRCURL=${KERNEL_URLS[0]}
+        msg_dialog 'question' "Clone repo: ${KERNEL_SRCURL}"
+        [[ "$RET_VALUE" = "NO"  ]] && exit 0
+      fi   
+    fi
+
+    # clone new repo
+    dprint "Clone GIT repo: $KERNEL_SRCURL"
+    git clone $KERNEL_SRCURL $KERNEL_SRCDIR || {
+      eprint 'GIT Clone Error'
+      cd $KERNEL_CWD
+      exit 1
+    }
+  fi
+  rm -rf $KERNEL_STADIR/*
+  rm -rf $KERNEL_TMPDIR && mkdir $KERNEL_TMPDIR
+  echo $KERNEL_SRCURL > $KERNEL_STADIR/cloned_repo
+fi
+
+# Go into source dir
+if [ -d $KERNEL_SRCDIR ]; then
+  cd $KERNEL_SRCDIR
+else
+  eprint "Source directory doesnt exist !"
+  exit 1
+fi
+
+# update actual branch
+if [ "$param_updt" = "true" ]; then
+  git clean -dfx &>/dev/null
+  git checkout . &>/dev/null
+
+  rm -rf $KERNEL_STADIR/*
+  rm -rf $KERNEL_TMPDIR && mkdir $KERNEL_TMPDIR
+  echo $KERNEL_SRCURL > $KERNEL_STADIR/cloned_repo
+
+  echo "PROJECT=KERNEL"                 > $CONFIG_FILE
+  echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+  echo "KERNEL_SRCURL=${KERNEL_SRCURL}"   >> $CONFIG_FILE
+
+  git pull &>/dev/null
+  
+  echo '***********************************************************'
+  echo "[INFO] SRC updates, run \"build_kernel\" !"
+  echo '***********************************************************'
+  cd $KERNEL_CWD
+  exit 0
+fi
+
+if [ -e "$KERNEL_STADIR/cloned_branch" ]; then
+  KERNEL_BRANCH=$(cat "$KERNEL_STADIR/cloned_branch")
+else
+  if [ -z $KERNEL_BRANCH ]; then
+    # select list dialog type (branch, tag or all)
+    SELOPTION=("BRANCH" "TAG" "ALL")
+    list_dialog 'Select option for git checkout list' "${SELOPTION[@]}"
+
+    if [ "$RET_VALUE" = "BRANCH" ]; then
+      BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+      DIALOG_NAME='Branch'
+    elif [ "$RET_VALUE" = "TAG" ]; then
+      BRANCHES=($(git tag -l | grep "rel"))
+      DIALOG_NAME='Tag'
+    else
+      BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+      BRANCHES+=($(git tag -l | grep "rel"))
+      DIALOG_NAME='Branch or Tag'
+    fi
+
+    if [ ${#BRANCHES[@]} -eq 0 ]; then
+      eprint " No ${DIALOG_NAME} found in repo: ${KERNEL_SRCURL}"
+      exit 1
+    fi
+    # select working branch
+    list_dialog "Select ${DIALOG_NAME}" "${BRANCHES[@]}"
+    KERNEL_BRANCH=$RET_VALUE
+  fi
+
+  git checkout $KERNEL_BRANCH || {
+    eprint 'Git Checkout Error'
+    cd $KERNEL_CWD
+    exit 1
+  }
+
+  echo $KERNEL_BRANCH > $KERNEL_STADIR/cloned_branch
+fi
+ 
+if [ "$param_clean" = "true" ]; then
+  dprint "Clean source directory"
+  git clean -dfx &>/dev/null
+  git checkout . &>/dev/null
+  rm -rf $KERNEL_TMPDIR && mkdir $KERNEL_TMPDIR
+
+  echo '***********************************************************'
+  echo "[INFO] SRC cleaned, run \"build_kernel\" !"
+  echo '***********************************************************'
+  cd $KERNEL_CWD
+  exit 0
+fi
+
+dprint "<< KERNEL Source >>"
+dprint "REPO   = $KERNEL_SRCURL"
+dprint "BRANCH = $KERNEL_BRANCH"
+
+# apply patches from patch directory if exist
+PATCH_USED=0
+for patch in $(ls $KERNEL_MYPDIR | sort); do
+  [[ -e "$KERNEL_STADIR/applied_patches/$patch" ]] && continue
+  echo
+  echo "[INFO] Apply patch: $patch"
+  patch -p1 < $KERNEL_MYPDIR/$patch >> /dev/null || {
+    eprint " Patch $patch Error"
+    cd $KERNEL_CWD
+    exit 1
+  }
+  [[ -d $KERNEL_STADIR/applied_patches ]] || mkdir -p $KERNEL_STADIR/applied_patches
+  touch $KERNEL_STADIR/applied_patches/$patch
+  PATCH_USED=1
+done
+[[ $PATCH_USED -eq 1 ]] && echo
+
+# add my sorces into kernel sorces
+if [ "$(ls $KERNEL_MYSDIR)" != "" ]; then
+  echo
+  echo "[INFO] Copy content of < mydata > into kernel source directory"
+  echo
+  cp -rf $KERNEL_MYSDIR/* $KERNEL_SRCDIR
+  tree $KERNEL_MYSDIR > $KERNEL_STADIR/changed_files
+fi
+
+# select board
+if [ -e $KERNEL_STADIR/target_name ]; then
+  KERNEL_BNAME=$(cat $KERNEL_STADIR/target_name)
+else
+  if [ -z $KERNEL_BNAME ]; then 
+    BOARDS=($(ls arch/arm/boot/dts/imx[67]*.dts | sed 's/arch\/arm\/boot\/dts\///' | sed 's/.dts//'))
+    [[ -z $BOARDS ]] && {
+      eprint " Not supported kernel version, use other branch !"
+      cd $KERNEL_CWD
+      exit 1
+    }
+    # select board
+    list_dialog 'Supported Boards' "${BOARDS[@]}"
+    KERNEL_BNAME=$RET_VALUE
+  fi
+
+  echo $KERNEL_BNAME > $KERNEL_STADIR/target_name
+fi
+
+# select target specific start address
+if [ -z $KERNEL_LADDR ]; then 
+  for i in ${KERNEL_LADDRS[@]}; do
+    FLAG=${i%=*}
+    if [[ "$KERNEL_BNAME" = *"$FLAG"* ]]; then
+      KERNEL_LADDR=${i#*=}
+    fi
+  done
+  if [ -z $KERNEL_LADDR ]; then
+    eprint "LOADADDR not defined for ${KERNEL_BNAME}"
+    cd $KERNEL_CWD
+    exit 1
+  fi
+  echo
+  echo "[INFO] LOADADDR = ${KERNEL_LADDR}"
+  echo
+fi
+
+# load default configs
+if [ ! -e "$KERNEL_TMPDIR/.config" ]; then
+  if [ -z $KERNEL_CONFIG ]; then
+    unset MYCONFIG
+    MYCONFIGS=($(ls $KERNEL_MYCDIR))
+    if [[ ${#MYCONFIGS[@]} -ne 0 ]]; then
+      if [[ ${#MYCONFIGS[@]} -eq 1 ]]; then
+        MYCONFIG=${MYCONFIGS[0]}
+      else
+        list_dialog 'Kernel Configs' "${MYCONFIGS[@]}"
+        MYCONFIG=$RET_VALUE
+      fi
+      rm -rf $KERNEL_TMPDIR/*
+      cp -f $KERNEL_MYCDIR/$MYCONFIG $KERNEL_TMPDIR/.config
+      echo $KERNEL_MYCDIR/$MYCONFIG > $KERNEL_STADIR/default_config
+      KERNEL_CONFIG=$KERNEL_MYCDIR/$MYCONFIG
+    fi
+ 
+    if [ -z $MYCONFIG ]; then
+      MYCONFIG="imx_v7_defconfig"
+      [[ -d $KERNEL_TMPDIR ]] && rm -rf $KERNEL_TMPDIR
+      mkdir $KERNEL_TMPDIR
+      if [ ! -e ${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG} ]; then
+        MYCONFIGS=($(ls ${KERNEL_SRCDIR}/arch/arm/configs | grep "imx_"))
+        list_dialog 'Kernel Configs' "${MYCONFIGS[@]}"
+        MYCONFIG=$RET_VALUE
+      fi
+      make O="$KERNEL_TMPDIR" ARCH="arm" $MYCONFIG || {
+        eprint " Load default config: $MYCONFIG Error"
+        cd $KERNEL_CWD
+        exit 1
+      }
+      echo ${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG} > $KERNEL_STADIR/default_config
+      KERNEL_CONFIG=${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}
+    fi
+    echo
+    echo "[INFO] CONFIG = ${KERNEL_CONFIG}"
+    echo
+    RET_VALUE=""
+    #msg_dialog 'question' "Run Configuration Wizard ?"
+  else
+    cp -f $KERNEL_CONFIG $KERNEL_TMPDIR/.config
+    echo $KERNEL_CONFIG > $KERNEL_STADIR/default_config
+    echo
+    echo "[INFO] CONFIG = ${KERNEL_CONFIG}"
+    echo
+  fi
+fi
+
+# run menuconfig wizard
+if [ "$param_mcfg" = "true" -o "$RET_VALUE" = "YES" ]; then
+  make O="$KERNEL_TMPDIR" ARCH="arm" menuconfig || {
+    eprint ' Menuconfig Error'
+    cd $KERNEL_CWD
+    exit 1
+  }
+
+  msg_dialog 'question' "Compile with updated config ?"
+  if [ "$RET_VALUE" = "NO"  ]; then 
+    exit 0
+  fi
+fi
+
+# compile kernel
+unset LDFLAGS
+make -j${CORES} O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" LOADADDR="$KERNEL_LADDR" $KERNEL_IMAGE || {
+  eprint ' uImage Compolation Error'
+  cd $KERNEL_CWD
+  exit 1
+}
+
+# compile modules
+make -j${CORES} O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" modules || {
+  eprint ' Modules Compolation Error'
+  cd $KERNEL_CWD
+  exit 1
+}
+
+# compile DTS
+make -j${CORES} O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" dtbs || {
+  eprint ' DTS Compilation Error'
+  cd $KERNEL_CWD
+  exit 1
+}
+
+# delete out dir
+[ -d $KERNEL_OUTDIR/$KERNEL_BNAME ] && rm -rf $KERNEL_OUTDIR/$KERNEL_BNAME
+mkdir -p $KERNEL_OUTDIR/$KERNEL_BNAME
+
+# Copy images, modules, ... into out directory
+cp $KERNEL_TMPDIR/arch/arm/boot/$KERNEL_IMAGE $KERNEL_OUTDIR/$KERNEL_BNAME
+cp $KERNEL_TMPDIR/.config $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.config
+make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_MOD_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME" modules_install
+# Remove simbolic links
+find $KERNEL_OUTDIR/$KERNEL_BNAME -type l | xargs rm -rf
+# Export DTB
+find $KERNEL_TMPDIR/arch/arm/boot/ -iname "${KERNEL_BNAME}*.dtb" -exec cp -v '{}' "$KERNEL_OUTDIR/$KERNEL_BNAME" \;
+# Export Firmware
+if [ "$param_fware" = "true" ]; then
+  make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_FW_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/lib/firmware" firmware_install
+fi
+
+# Create kernel_info.txt file
+echo "GitRepo: $KERNEL_SRCURL" > $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+echo "Branch:  $KERNEL_BRANCH" >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+if [ -d $KERNEL_STADIR/applied_patches ]; then
+  echo " " >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+  echo "Applied patches:" >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+  for i in $(ls $KERNEL_STADIR/applied_patches); do
+    echo " - $i" >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+  done
+fi
+if [ -e $KERNEL_STADIR/changed_files ]; then
+  echo " " >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+  echo "Modified or Added Files:" >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+  cat $KERNEL_STADIR/changed_files >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
+fi
+
+# Create patch
+if [ "$param_patch" = "true" ]; then
+  cd $KERNEL_SRCDIR
+  if [ -z "$(git status -s)" ]; then
+    echo
+    echo "[INFO] No changes in KERNEL sources, patch not created !"
+  else
+    echo
+    echo "[INFO] Generate patch from all changes in KERNEL sources"
+    git add --all     > /dev/null
+    git stash -u      > /dev/null
+    git stash show -p > $KERNEL_OUTDIR/${KERNEL_BNAME}/9999_kernel_${KERNEL_BRANCH}_${KERNEL_BNAME}.patch
+    git stash pop     > /dev/null
+    git reset         > /dev/null
+  fi
+fi
+
+if [ "$param_zip" = "true" ]; then
+  echo
+  echo "[INFO] Create ${KERNEL_BNAME}.zip, please wait ..."
+  cd $KERNEL_OUTDIR
+  zip -r ${KERNEL_BNAME}.zip ${KERNEL_BNAME} > /dev/null || {
+    eprint ' Compresion Error'
+    cd $KERNEL_CWD
+    exit 1
+  }
+fi
+
+# create config file
+echo "PROJECT=KERNEL"                 > $CONFIG_FILE
+echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+echo "KERNEL_SRCURL=${KERNEL_SRCURL}"   >> $CONFIG_FILE
+echo "KERNEL_BRANCH=${KERNEL_BRANCH}"   >> $CONFIG_FILE
+echo "KERNEL_CONFIG=${KERNEL_CONFIG}"   >> $CONFIG_FILE
+echo "KERNEL_BNAME=${KERNEL_BNAME}"     >> $CONFIG_FILE
+echo "KERNEL_LADDR=${KERNEL_LADDR}"     >> $CONFIG_FILE
+echo "KERNEL_IMAGE=${KERNEL_IMAGE}"     >> $CONFIG_FILE
+
+echo
+echo " ---------------------------------------------------------------"
+echo "         Congratulation, Kernel build was successful"
+echo " ---------------------------------------------------------------"
+echo " Created files are stored in:"
+echo " $KERNEL_OUTDIR/${KERNEL_BNAME}"
+echo " ---------------------------------------------------------------"
+echo
+
+cd $KERNEL_CWD
+

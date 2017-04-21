@@ -1,0 +1,12 @@
+Source: emlinux-tools 
+Maintainer: Martin Olejar
+Build-Depends:
+Standards-Version: 0.0.3
+Section: utils
+
+Package: emlinux-tools
+Section: custom
+Priority: optional
+Architecture: all
+Essential: no
+Description: Automatization tools for embedded Linux development

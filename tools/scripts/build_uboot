@@ -1,0 +1,467 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+usage() {
+cat << EOF
+Usage: $0 [options] [params]
+
+U-Boot build script for i.MX (NXP MPU)
+   - use "mydata" dir for own data like patches, configs and sources
+
+OPTIONS:
+   -h/--help   Show this message
+   -u/--updt   Clean sources and update local branch
+   -c/--clean  Clean sources (remove all uncomited changes)
+   -p/--patch  Create patch from working sources
+   -m/--mcfg   Run menuconfig
+   -x          Use XDialog
+   -v          Verbose (print debug info)
+
+PARAMS:
+   -s/--surl   Set GitRepo URL for U-Boot SRC (optional)
+   -t/--btool  Set path for external toolchain (optional)
+
+EOF
+}
+
+# Get the params from arguments provided
+argparse "?|h|help c|clean m|mcfg p|patch u|updt x|xdialog v|verbose s|surl t|btool" $*
+if [ $? -eq 0 ]; then
+  echo
+  echo "Use: $0 -h/--help for usage description"
+  exit 1
+fi
+
+# process help argument and exit
+[[ "$param_help" = "true" ]] && {
+    usage
+    exit 0
+}
+
+echo
+echo '***********************************************************'
+echo '*                    U-Boot Compiler                      *'
+echo '***********************************************************'
+echo
+echo " For printing all usable options use \"build_uboot -h\""
+echo
+
+# ----------------------------------------------------------------
+# Make sure you are not root
+# ----------------------------------------------------------------
+if [ "$(id -u)" = "0" ]; then
+   eprint "This script can not be run as root"
+   exit 1
+fi
+
+# Check if instaled required packages and install if doesn't
+check_package "build-essential"
+check_package "lzop"
+check_package "git"
+check_package "tree"
+
+if [ "$param_xdialog" = "true" ]; then
+  check_package "zenity"
+  MENUCONFIG="xconfig"
+else
+  MENUCONFIG="menuconfig"
+fi
+
+UBOOT_CWD=$(pwd)
+
+# Internal files
+CONFIG_FILE=$UBOOT_CWD/build.cfg
+
+if [ -e $CONFIG_FILE ]; then
+  . $CONFIG_FILE
+
+  if [ -n $PROJECT -a "$PROJECT" != "UBOOT" ]; then
+    eprint " You are in $PROJECT directory, use the correct dir !"
+    exit 1
+  fi
+fi
+
+# ----------------------------------------------------------------
+# TOOLCHAIN INIT
+# ----------------------------------------------------------------
+# test toolchain argument if working
+if [ ! -z ${param_btool} ]; then
+  ${param_btool}gcc -v &>/dev/null
+  if [ $? -ne 0 ]; then
+    wprint " Compiler: ${param_btool} doesn't work,\n will be used internal !"
+  else
+    CROSS_COMPILER=${param_btool}
+  fi
+fi
+# search for internal toolchain if not explicitly specified
+if [ -z $CROSS_COMPILER ]; then
+  echo "[INFO ] Searching Toolchain ... please wait !"
+  find_toolchain "/opt /usr/bin /usr/sbin $HOME"
+  if [ -z $RET_VALUE ]; then
+    eprint "Toolchain not installed, please run \"build_toolchain\" first"
+    exit 1
+  fi
+  CROSS_COMPILER=$RET_VALUE
+fi
+
+# Default U-Boot repos
+if [ -z $UBOOT_URLS ]; then                
+  URLS=('http://sw-stash.freescale.net/scm/imx/uboot-imx.git'
+        'git://git.freescale.com/imx/uboot-imx.git'
+        'https://github.com/Freescale/u-boot-fslc.git')
+fi
+
+# Optional params
+[[ -z $param_surl  ]] || UBOOT_SRCURL=$param_surl
+
+# Set Working dirs locations
+[[ -z $UBOOT_OUTDIR ]] && UBOOT_OUTDIR="$UBOOT_CWD/build"
+[[ -z $UBOOT_SRCDIR ]] && UBOOT_SRCDIR="$UBOOT_CWD/source"
+[[ -z $UBOOT_MYSDIR ]] && UBOOT_MYSDIR="$UBOOT_CWD/mydata/source"
+[[ -z $UBOOT_MYPDIR ]] && UBOOT_MYPDIR="$UBOOT_CWD/mydata/patch"
+[[ -z $UBOOT_MYCDIR ]] && UBOOT_MYCDIR="$UBOOT_CWD/mydata/config"
+[[ -z $UBOOT_STADIR ]] && UBOOT_STADIR="$UBOOT_CWD/.state"
+[[ -z $UBOOT_TMPDIR ]] && UBOOT_TMPDIR="$UBOOT_CWD/.cache"
+
+# Create Working dirs
+[[ -d $UBOOT_OUTDIR ]] || mkdir -p $UBOOT_OUTDIR
+[[ -d $UBOOT_MYSDIR ]] || mkdir -p $UBOOT_MYSDIR
+[[ -d $UBOOT_MYPDIR ]] || mkdir -p $UBOOT_MYPDIR
+[[ -d $UBOOT_MYCDIR ]] || mkdir -p $UBOOT_MYCDIR
+[[ -d $UBOOT_STADIR ]] || mkdir -p $UBOOT_STADIR
+[[ -d $UBOOT_TMPDIR ]] || mkdir -p $UBOOT_TMPDIR
+
+# Verbose outputs
+dprint "<< UBOOT Toolchain >>"
+dprint "Path: ${COMPILER%/*}"
+dprint "Exec: ${COMPILER##*/}"
+dprint "Version: $(${COMPILER}gcc -dumpversion)"
+dprint "<< UBOOT Directories >>"
+dprint "ROOT DIR: $UBOOT_CWD"
+dprint "OUT  DIR: $UBOOT_OUTDIR"
+dprint "SRC  DIR: $UBOOT_SRCDIR"
+dprint "STAT DIR: $UBOOT_STADIR"
+
+if [ ! -e $CONFIG_FILE ]; then
+  echo "PROJECT=UBOOT"                  > $CONFIG_FILE
+  echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+  rm -rf $UBOOT_TMPDIR && mkdir $UBOOT_TMPDIR
+  rm -rf $UBOOT_STADIR/*
+fi
+
+if [ -e $UBOOT_STADIR/cloned_repo ]; then
+  UBOOT_SRCURL=$(cat $UBOOT_STADIR/cloned_repo)
+else
+  if [ -e $UBOOT_SRCDIR/.git/config ]; then
+    cd $UBOOT_SRCDIR
+    UBOOT_SRCURL=$(git config --get remote.origin.url)
+  else
+    if [ -z $UBOOT_SRCURL ]; then
+      if [ ${#URLS[@]} -gt 1 ]; then
+        list_dialog 'Select source repository' "${URLS[@]}"
+        UBOOT_SRCURL=$RET_VALUE
+      else
+        UBOOT_SRCURL=${URLS[0]}
+        msg_dialog 'question' "Clone repo: ${UBOOT_SRCURL}"
+        [[ "$RET_VALUE" = "NO"  ]] && exit 0
+      fi
+    fi
+
+    # clone new repo
+    dprint "Clone GIT repo: $UBOOT_SRCURL"
+    git clone $UBOOT_SRCURL $UBOOT_SRCDIR || {
+      eprint 'GIT Clone Error'
+      cd $UBOOT_CWD
+      exit 1
+    }
+  fi
+  rm -rf $UBOOT_STADIR/*
+  rm -rf $UBOOT_TMPDIR && mkdir $UBOOT_TMPDIR
+  echo $UBOOT_SRCURL > $UBOOT_STADIR/cloned_repo
+fi
+
+# Go into source dir
+if [ -d $UBOOT_SRCDIR ]; then
+  cd $UBOOT_SRCDIR
+else
+  eprint "Source directory doesnt exist !"
+  exit 1
+fi
+
+# update actual branch
+if [ "$param_updt" = "true" ]; then
+  git clean -dfx &>/dev/null
+  git checkout . &>/dev/null
+
+  rm -rf $UBOOT_STADIR/*
+  rm -rf $UBOOT_TMPDIR && mkdir $UBOOT_TMPDIR
+  echo $UBOOT_SRCURL > $UBOOT_STADIR/cloned_repo
+
+  echo "PROJECT=UBOOT"                  > $CONFIG_FILE
+  echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+  echo "UBOOT_SRCURL=${UBOOT_SRCURL}"     >> $CONFIG_FILE
+
+  git pull &>/dev/null
+  
+  echo '***********************************************************'
+  echo "[INFO] SRC updates, run \"build_uboot\" !"
+  echo '***********************************************************'
+  cd $UBOOT_CWD
+  exit 0
+fi
+
+if [ -e $UBOOT_STADIR/cloned_branch ]; then
+  UBOOT_BRANCH=$(cat $UBOOT_STADIR/cloned_branch)
+  #UBOOT_BRANCH=$(git branch | grep "*" | sed 's/* //')
+else
+  if [ -z $UBOOT_BRANCH ]; then
+    # select list dialog type (branch, tag or all)
+    SELOPTION=("BRANCH" "TAG" "ALL")
+    list_dialog 'Select option for git checkout list' "${SELOPTION[@]}"
+
+    if [ "$RET_VALUE" = "BRANCH" ]; then
+      BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+      DIALOG_NAME='Branch'
+    elif [ "$RET_VALUE" = "TAG" ]; then
+      BRANCHES=($(git tag -l | grep "rel"))
+      DIALOG_NAME='Tag'
+    else
+      BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+      BRANCHES+=($(git tag -l | grep "rel"))
+      DIALOG_NAME='Branch or Tag'
+    fi
+
+    if [ ${#BRANCHES[@]} -eq 0 ]; then
+      eprint " No ${DIALOG_NAME} found in repo: ${UBOOT_SRCURL}"
+      exit 1
+    fi
+    
+    # select working branch
+    list_dialog "Select ${DIALOG_NAME}" "${BRANCHES[@]}"
+    UBOOT_BRANCH=$RET_VALUE
+  fi
+
+  git checkout $UBOOT_BRANCH || {
+    eprint 'Git Checkout Error'
+    cd $UBOOT_CWD
+    exit 1
+  }
+
+  echo $UBOOT_BRANCH > $UBOOT_STADIR/cloned_branch
+fi
+
+
+if [ "$param_clean" = "true" ]; then
+  dprint "Clean source directory"
+  git clean -dfx &>/dev/null
+  git checkout . &>/dev/null
+  rm -rf $UBOOT_TMPDIR && mkdir $UBOOT_TMPDIR
+
+  echo '***********************************************************'
+  echo "[INFO] SRC cleaned, run \"build_uboot\" !"
+  echo '***********************************************************'
+  cd $UBOOT_CWD
+  exit 0
+fi
+
+dprint "<< UBOOT Source >>"
+dprint "REPO   = $UBOOT_SRCURL"
+dprint "BRANCH = $UBOOT_BRANCH"
+
+PATCH_USED=0
+# apply patches from patch directory if exist
+for patch in $(ls $UBOOT_MYPDIR | sort); do
+  [[ -e "$UBOOT_STADIR/applied_patches/$patch" ]] && continue
+  echo
+  echo "[INFO] Apply patch: $patch"
+  patch -p1 < $UBOOT_MYPDIR/$patch >> /dev/null || {
+    eprint " Patch $patch Error"
+    cd $UBOOT_CWD
+    exit 1
+  }
+  [[ -d $UBOOT_STADIR/applied_patches ]] || mkdir -p $UBOOT_STADIR/applied_patches
+  touch $UBOOT_STADIR/applied_patches/$patch
+  PATCH_USED=1
+done
+[[ $PATCH_USED -eq 1 ]] && echo
+
+# add my sorces into kernel sorces
+if [ "$(ls $UBOOT_MYSDIR)" != "" ]; then
+  echo
+  echo "[INFO] Copy content of < mydata > into uboot source directory"
+  echo
+  cp -rf $UBOOT_MYSDIR/* $UBOOT_SRCDIR
+  tree $UBOOT_MYSDIR > $UBOOT_STADIR/changed_files
+fi
+
+# select board
+if [ -e $UBOOT_STADIR/target_name ]; then
+  UBOOT_BNAME=$(cat $UBOOT_STADIR/target_name)
+else
+  if [ -z $UBOOT_BNAME ]; then
+    BOARDS=($(ls configs/mx[67]* configs/vf* | sed 's/configs\///' | sed 's/_defconfig//'))
+    [[ -z $BOARDS ]] && {
+      eprint " Not supported u-boot version, use other branch !"
+      cd $UBOOT_CWD
+      exit 1
+    }
+    # select board
+    list_dialog 'Supported Boards' "${BOARDS[@]}"
+    UBOOT_BNAME=$RET_VALUE
+  fi
+
+  echo $UBOOT_BNAME > $UBOOT_STADIR/target_name
+fi
+
+
+# load default configs
+if [ ! -e $UBOOT_TMPDIR/.config ]; then
+  if [ -z $UBOOT_CONFIG ]; then
+    MYCONFIG=""
+    MYCONFIGS=($(ls $UBOOT_MYCDIR))
+    if [[ ${#MYCONFIGS[@]} -ne 0 ]]; then
+      if [[ ${#MYCONFIGS[@]} -eq 1 ]]; then
+        MYCONFIG=${MYCONFIGS[0]}
+      else
+        list_dialog 'UBoot Configs' "${MYCONFIGS[@]}"
+        MYCONFIG=$RET_VALUE
+      fi
+      rm -rf $UBOOT_TMPDIR/*
+      cp -f $UBOOT_MYCDIR/$MYCONFIG $UBOOT_TMPDIR/.config
+      echo $UBOOT_MYCDIR/$MYCONFIG > $UBOOT_STADIR/default_config
+      UBOOT_CONFIG=$UBOOT_MYCDIR/$MYCONFIG
+    fi
+ 
+    if [ -z $MYCONFIG ]; then
+      MYCONFIG="${UBOOT_BNAME}_defconfig"
+      if [ ! -e ${UBOOT_SRCDIR}/configs/${MYCONFIG} ]; then
+        MYCONFIGS=($(ls ${UBOOT_SRCDIR}/configs | grep "^mx"))
+        list_dialog 'UBoot Default Configs' "${MYCONFIGS[@]}"
+        MYCONFIG=$RET_VALUE
+      fi
+      make O="$UBOOT_TMPDIR" ARCH=arm $MYCONFIG || {
+        eprint " Load default config: $MYCONFIG Error"
+        cd $UBOOT_CWD
+        exit 1
+      }
+      echo $UBOOT_MYCDIR/$MYCONFIG > $UBOOT_STADIR/default_config
+      UBOOT_CONFIG=${UBOOT_SRCDIR}/configs/${MYCONFIG}
+      echo
+      echo "[INFO] CONFIG = ${UBOOT_CONFIG}"
+      echo
+    fi
+  else
+    MYCONFIG=${UBOOT_CONFIG##*/}
+    if [ -e ${UBOOT_SRCDIR}/configs/${MYCONFIG} ]; then
+      make O="$UBOOT_TMPDIR" ARCH=arm $MYCONFIG || {
+        eprint " Load default config: $MYCONFIG Error"
+        cd $UBOOT_CWD
+        exit 1
+      }
+    else
+      cp -f $UBOOT_CONFIG $UBOOT_TMPDIR/.config
+    fi
+    echo $UBOOT_CONFIG > $UBOOT_STADIR/default_config
+    echo
+    echo "[INFO] CONFIG = ${UBOOT_CONFIG}"
+    echo
+  fi  
+fi
+    
+# run menuconfig wizard
+if [ "$param_mcfg" = "true" ]; then
+  make O="$UBOOT_TMPDIR" ARCH=arm menuconfig || {
+    eprint ' Menuconfig Error'
+    cd $UBOOT_CWD
+    exit 1
+  }
+
+  msg_dialog 'question' "Compile with updated config ?"
+  if [ "$RET_VALUE" = "NO"  ]; then 
+    exit 0
+  fi
+fi
+
+# compile uboot
+unset LDFLAGS
+make -j${CORES} O="$UBOOT_TMPDIR" ARCH=arm CROSS_COMPILE=$CROSS_COMPILER all || {
+  eprint ' U-Boot Compolation Error'
+  cd $UBOOT_CWD
+  exit 1
+}
+
+[ -d "$UBOOT_OUTDIR/i${UBOOT_BNAME}" ] && rm -rf "$UBOOT_OUTDIR/i${UBOOT_BNAME}"
+mkdir -p $UBOOT_OUTDIR/i${UBOOT_BNAME}
+
+# Copy images into out directory
+[ -e $UBOOT_TMPDIR/SPL        ] && cp $UBOOT_TMPDIR/SPL $UBOOT_OUTDIR/i${UBOOT_BNAME}
+[ -e $UBOOT_TMPDIR/u-boot.img ] && cp $UBOOT_TMPDIR/u-boot.img $UBOOT_OUTDIR/i${UBOOT_BNAME}
+[ -e $UBOOT_TMPDIR/u-boot.imx ] && cp $UBOOT_TMPDIR/u-boot.imx $UBOOT_OUTDIR/i${UBOOT_BNAME}
+cp $UBOOT_TMPDIR/.config $UBOOT_OUTDIR/i${UBOOT_BNAME}/${UBOOT_BNAME}.config
+
+# Create info.txt file
+echo "Repo url: $UBOOT_SRCURL" > $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+echo "Branch:   $UBOOT_BRANCH" >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+if [ -d $UBOOT_STADIR/applied_patches ]; then
+  echo " " >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+  echo "Applied patches:" >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+  for i in $(ls $UBOOT_STADIR/applied_patches); do
+    echo " - $i" >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+  done
+fi
+if [ -e $UBOOT_STADIR/changed_files ]; then
+  echo " " >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+  echo "Modified or Added Files:" >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+  cat $UBOOT_STADIR/changed_files >> $UBOOT_OUTDIR/i${UBOOT_BNAME}/i${UBOOT_BNAME}.info
+fi
+
+# Create patch
+if [ "$param_patch" = "true" ]; then
+  cd $UBOOT_SRCDIR
+  if [ -z "$(git status -s)" ]; then
+    echo
+    echo "[INFO] No changes in KERNEL sources, patch not created !"
+  else
+    echo
+    echo "[INFO] Generate patch from all changes in UBOOT sources"
+    git add --all > /dev/null
+    git stash -u  > /dev/null
+    git stash show -p > $UBOOT_OUTDIR/i${UBOOT_BNAME}/9999_uboot_${UBOOT_BRANCH}_i${UBOOT_BNAME}.patch
+    git stash pop > /dev/null
+    git reset     > /dev/null
+  fi
+fi
+
+# create config file
+echo "PROJECT=UBOOT"                    > $CONFIG_FILE
+echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+echo "UBOOT_SRCURL=${UBOOT_SRCURL}"     >> $CONFIG_FILE
+echo "UBOOT_BRANCH=${UBOOT_BRANCH}"     >> $CONFIG_FILE
+echo "UBOOT_CONFIG=${UBOOT_CONFIG}"     >> $CONFIG_FILE
+echo "UBOOT_BNAME=${UBOOT_BNAME}"       >> $CONFIG_FILE
+
+echo
+echo " ---------------------------------------------------------------"
+echo "        Congratulation, U-Boot build was successful"
+echo " ---------------------------------------------------------------"
+echo " Created files are stored in:"
+echo " $UBOOT_OUTDIR/i${UBOOT_BNAME}"
+echo " ---------------------------------------------------------------"
+echo
+
+cd $UBOOT_CWD
+

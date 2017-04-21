@@ -1,0 +1,318 @@
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+# Validate arguments
+# Usage: check_param_variants <params>
+check_param_variants() {
+  for param in $1 ; do
+    local variants=${param//\|/ }
+    for variant in $variants ; do
+      if [[ "$variant" = "$2" ]] ; then
+        # Update the key to match the long version
+        local arr=(${param//\|/ })
+        let last=${#arr[@]}-1
+        key="${arr[$last]}"
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
+# CLI argumen parser
+argparse() {
+
+  local param_pair
+  local key
+  local value
+  local shift_count
+  # Get allowed params 
+  local allowed_params=$1
+  shift
+
+  while : ; do
+    # Ensure we have a valid param. Allows this to work even in -u mode.
+    if [[ $# == 0 || -z $1 ]] ; then
+      break
+    fi
+
+    # Split the argument if it contains "="
+    param_pair=(${1//=/ })
+    # Remove preceeding dashes
+    key="${param_pair[0]#--}"
+
+    # Check for concatinated boolean short parameters.
+    local nodash="${key#-}"
+    local breakout=false
+    if [[ "$nodash" != "$key" && ${#nodash} -gt 1 ]]; then
+      # Extrapolate multiple boolean keys in single dash notation. 
+      # ie. "-vmh" should translate to: "-v -m -h"
+      local short_param_count=${#nodash}
+      let new_arg_count=$#+$short_param_count-1
+      local new_args=""
+      # $str_pos is the current position in the short param string $nodash
+      for (( str_pos=0; str_pos<new_arg_count; str_pos++ )); do
+        # The first character becomes the current key
+        if [ $str_pos -eq 0 ] ; then
+          key="${nodash:$str_pos:1}"
+          breakout=true
+        fi
+        # $arg_pos is the current position in the constructed arguments list
+        let arg_pos=$str_pos+1
+        if [ $arg_pos -gt $short_param_count ] ; then
+          # handle other arguments
+          let orignal_arg_number=$arg_pos-$short_param_count+1
+          local new_arg="${!orignal_arg_number}"
+        else
+          # break out our one argument into new ones
+          local new_arg="-${nodash:$str_pos:1}"
+        fi
+        new_args="$new_args \"$new_arg\""
+      done
+      # remove the preceding space and set the new arguments
+      eval set -- "${new_args# }"
+    fi
+    if ! $breakout ; then
+      key="$nodash"
+    fi
+
+    # By default we expect to shift one argument at a time
+    shift_count=1
+    if [ "${#param_pair[@]}" -gt "1" ] ; then
+      # This is a param with equals notation
+      value="${param_pair[1]}"
+    else
+      # This is either a boolean param and there is no value,
+      # or the value is the next command line argument
+      # Assume the value is a boolean true, unless the next argument is found to be a value.
+      value=true
+      if [[ $# -gt 1 && -n "$2" ]]; then
+        local nodash="${2#-}"
+        if [ "$nodash" = "$2" ]; then
+          # The next argument has NO preceding dash so it is a value
+          value="$2"
+          shift_count=2
+        fi
+      fi
+    fi
+
+    # Check that the param being passed is one of the allowed params
+    if check_param_variants "$allowed_params" "$key" ; then
+      # --key-name will now become param_key_name
+      eval param_${key//-/_}="$value"
+    else
+      echo "ERROR: Unknown option \"$1\"" >&2
+      return 0
+    fi
+    shift $shift_count
+  done
+
+  return 1
+}
+
+#################################################################################
+
+# help function for debug print
+dprint() {
+  [[ "$param_verbose" = "true" ]] && echo "[DEBUG] $1"
+}
+
+# Warning output
+# Usage: wprint <msg>
+wprint() {
+  if [ "$param_xdialog" = "true" ]; then
+    zenity --warning --text "$1"
+  else
+    echo
+    echo '*********************** WARNING ***************************'
+    echo -e "$1"
+    echo '-----------------------------------------------------------'
+    echo
+  fi
+}
+
+# Error output
+# Usage: eprint <msg>
+eprint() {
+  if [ "$param_xdialog" = "true" ]; then
+    zenity --error --text "$1"
+  else
+    echo
+    echo '***********************  ERROR  ***************************'
+    echo -e "$1"
+    echo '-----------------------------------------------------------'
+    echo
+  fi
+}
+
+#################################################################################
+
+# global variable for return value
+RET_VALUE=
+
+# Selection dialog
+# Usage: list_dialog <title> <items>
+# Return: item in RET_VALUE variable
+list_dialog() {
+  local title=$1; shift
+  local items=$@
+  local selected=0
+  local cnt=0
+
+  if [ "$param_xdialog" = "true" ]; then
+    ret=$(zenity --list --title="$title" --column="$title" $items)
+    if [ $? -eq 1 ]; then
+      exit 0
+    fi
+    RET_VALUE=${ret%|*}
+  else
+    echo
+    echo '------------------------------------------------------------'
+    echo " $title "
+    echo '------------------------------------------------------------'
+    for item in ${items}; do 
+      echo " $cnt) $item"
+      cnt=$(($cnt + 1))
+    done
+    echo
+    echo ' x) Exit'
+    echo '------------------------------------------------------------'
+    while [ $selected -eq 0 ] ; do
+      read -p "Enter: " key
+      [[ $key == 'x' ]] && exit 0
+      [[ $key == ?(-)+([0-9]) ]] && [[ $key -lt $cnt ]] && selected=1
+    done
+    ret=($(echo ${items}))
+    RET_VALUE=${ret[$key]}
+    echo
+  fi   
+}
+
+# Question or info message dialog
+# Usage: msg_dialog <msg_type> <msg>
+# Return: "YES" on "NO" in RET_VALUE variable
+msg_dialog() {
+  local type="$1"
+  local message=$2
+
+  if [ "$param_xdialog" = "true" ]; then
+    zenity --${type} --text "${message}"
+    if [ $? -eq 0 ]; then
+      RET_VALUE="YES"
+    else
+      RET_VALUE="NO"
+    fi
+  else
+    echo
+    if [ "$type" = "question" ]; then
+      read -p "${message} [y/n]: " val
+      if [ "${val}" == "y" ]; then
+        RET_VALUE="YES"
+      else
+        RET_VALUE="NO"
+      fi
+    else
+      echo "${message}"
+    fi
+  fi  
+}
+
+#################################################################################
+
+# Testing return value of previous command
+# Usage: check_error <err_msg>
+ROOTDIR=$(pwd)
+check_error() {
+  if [ $? -ne 0 ]; then
+    eprint "$1"
+    cd $ROOTDIR
+    exit 1
+  fi
+}
+
+# Dependency checker and package installer
+# Usage: check_package <pkg_name>
+HAS_REFRESHED=0
+check_package()
+{
+  if [ -n "$(dpkg -l ${1} 2>&1 | grep "no packages found")" ]; then
+    echo "[INFO] Package ${1} is not installed. We need to grab it"
+    if [ "${HAS_REFRESHED}" -ne 1 ]; then
+      echo "[INFO] First need to update apt cache, please be patient"
+      sudo apt-get update > /dev/null 2>&1
+      HAS_REFRESHED=1
+    fi
+    sudo apt-get -y install ${1}
+    check_error "Package Installation Error !"
+  fi
+}
+
+# Extract compressed package
+# Usage: extract <pkg_path> <out_dir> 
+extract()
+{
+  local PKG_PATH="$1"
+  local PKG_EXT=${PKG_PATH##*.}
+  local PKG_ODIR="$2"
+
+  if [ ! -f ${PKG_PATH} ]; then
+    eprint "Package: $PKG_PATH doesn't exist"
+    exit 1
+  fi
+
+  # Parse arguments
+  case $PKG_EXT in
+    gz)  tar -xzf ${PKG_PATH} -C ${PKG_ODIR};;
+    xz)  tar -xJf ${PKG_PATH} -C ${PKG_ODIR};;
+    bz2) tar -xjf ${PKG_PATH} -C ${PKG_ODIR};;
+    zip) unzip -q ${PKG_PATH} -d ${PKG_ODIR};;
+    7z)  7z x ${PKG_PATH} -o${PKG_ODIR};;
+    *) eprint "Unsupported archive: $PKG_EXT"; exit 1 ;;
+  esac
+
+  if [ $? -ne 0 ]; then
+    eprint "Extraction failed, exit ! \n"
+    rm -rfd ${PKG_ODIR}
+    exit 1
+  fi
+}
+
+# Download package
+# Usage: download <url> <out_dir> 
+download()
+{
+  wget $1 -O $2
+  check_error "download error"
+}
+
+# Find installed toolchains
+# Usage: find_toolchain <path0> <path1> ...
+# Return: toolchain path in RET_VALUE variable
+find_toolchain() {
+  # ---
+  local TOOLS
+  local cnt=0
+
+  for path in $@; do
+    GCCEXEC=($(find $path -type f -executable -name 'arm*linux-*gcc' 2>/dev/null))
+    GCCEXEC+=($(find $path -type l -executable -name 'arm*linux-*gcc' 2>/dev/null))
+    for n in $GCCEXEC; do
+      $n -v &>/dev/null || continue
+      cnt=$((cnt+1))
+      TOOLS+="${n} "
+    done
+  done
+
+  if [ $cnt -eq 0 ]; then
+    RET_VALUE=""
+  elif [ $cnt -eq 1 ]; then
+    RET_VALUE="${TOOLS%-*}-"
+  else
+    list_dialog 'Select toolchain' "$TOOLS"
+    RET_VALUE="${RET_VALUE%-*}-"
+  fi
+}
+
+#################################################################################
+

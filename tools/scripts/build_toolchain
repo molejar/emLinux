@@ -1,0 +1,134 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+usage() {
+cat << EOF
+Usage: $0 [options]
+
+Toolchain build script for i.MX (NXP MPU)
+
+OPTIONS:
+   -h/--help   Show this message
+   -x          Use XDialog
+   -v          Verbose
+
+EOF
+}
+
+# Get the params from arguments provided
+argparse "?|h|help x|xdialog v|verbose" $*
+if [ $? -eq 0 ]; then
+  echo
+  echo "Use: $0 -h/--help for usage description"
+  exit 1
+fi
+
+# process help argument and exit
+[[ "$param_help" = "true" ]] && {
+    usage
+    exit 0
+}
+
+echo
+echo '***********************************************************'
+echo '*                   Prepare Toolchain                     *'
+echo '***********************************************************'
+echo
+echo " For printing all usable options use \"build_toolchain -h\""
+echo
+
+# Check if instaled required packages and install if doesn't
+check_package "xz-utils"
+check_package "gzip"
+check_package "git"
+
+if [ "$param_xdialog" = "true" ]; then
+    check_package "zenity"
+    MENUCONFIG="xconfig"
+else
+    MENUCONFIG="menuconfig"
+fi
+
+CWD=$(pwd)
+
+if [ -e "$CWD/toolchain" ]; then
+  . $CWD/toolchain
+fi
+
+if [ ! -z $COMPILER ]; then
+  ${COMPILER}gcc -v &>/dev/null
+  if [ $? -eq 0 ]; then
+    msg_dialog 'info' "Compiler already configured"
+    exit 0
+  fi
+fi
+
+msg_dialog 'question' "Check for internal toolchain"
+if [ "$RET_VALUE" = "YES"  ]; then 
+  echo "[INFO ] Searching Toolchain ... please wait !"
+  find_toolchain "/opt /usr/bin /usr/sbin $HOME"
+  COMPILER=$RET_VALUE
+fi
+
+
+# Linaro ARM v6 and v7 Linux GCC toolchian
+URLS=('https://releases.linaro.org/components/toolchain/binaries/5.1-2015.08/arm-linux-gnueabihf/gcc-linaro-5.1-2015.08-x86_64_arm-linux-gnueabihf.tar.xz')      
+
+# crosstool-ng sources
+SRC_URL='https://github.com/crosstool-ng/crosstool-ng'
+
+if [ -z $COMPILER ]; then
+  if [ ${#URLS[@]} -gt 1 ]; then
+    list_dialog 'Select link' "${URLS[@]}"
+    PKG_URL=$RET_VALUE
+  else
+    PKG_URL=${URLS[0]}
+  fi
+
+  INS_DIRS="/opt $CWD/bin"
+  list_dialog 'Select install dir' "$INS_DIRS"
+  INS_DIR=$RET_VALUE
+
+  PKG_TAR=${PKG_URL##*/}
+  TMP_DIR=$(mktemp -d)
+  download "${PKG_URL}" "$TMP_DIR/$PKG_TAR"
+  mkdir "$TMP_DIR/unpacked"
+  extract  "$TMP_DIR/$PKG_TAR" "$TMP_DIR/unpacked"
+  TRG_DIR=$(ls $TMP_DIR/unpacked)
+  if [ "$INS_DIR" = '/opt' ]; then
+    sudo mv "$TMP_DIR/unpacked/$TRG_DIR" "$INS_DIR"
+  else
+    [[ -d $INS_DIR ]] || mkdir -p $INS_DIR
+    mv "$TMP_DIR/unpacked/$TRG_DIR" "$INS_DIR"
+  fi
+  rm -rfd "$TMP_DIR"
+
+  find_toolchain "$INS_DIR/$TRG_DIR"
+  COMPILER=$RET_VALUE
+fi
+
+echo "COMPILER=\"$COMPILER\"" > $CWD/toolchain
+
+echo
+echo " ---------------------------------------------------------------"
+echo "       Congratulation, Toolchain install was successful"
+echo " ---------------------------------------------------------------"
+echo " Path: ${COMPILER%/*}"
+echo " Exec: ${COMPILER##*/}gcc"
+echo " Version: $(${COMPILER}gcc -dumpversion)"
+echo " ---------------------------------------------------------------"
+echo

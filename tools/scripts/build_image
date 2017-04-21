@@ -1,0 +1,547 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+usage() {
+cat << EOF
+Usage: $0 [options]
+
+SDCard image creator script for i.MX (NXP MPU)
+  - use "uboot"  dir for bootloader image and env
+  - use "kernel" dir for kernel image and *.dtb files
+  - use "rootfs" dir for rootfs pkgs or rawdata
+
+OPTIONS:
+   -h/--help   Show this message
+   -i/--init   Create required dirs and exit
+   -e/--extr   Extract SD Card Image <path to image>
+   -s/--sfatp  Set FAT16 partition size in MB (default: 20)
+   -f/--sfree  Set RootFS free space in MB (default: 200)
+   -c          Comress SD image: zip or gzip (default: zip)
+   -x          Use XDialog
+   -v          Verbose
+
+EOF
+}
+
+# Get the params from arguments provided
+argparse "?|h|help f|sfree s|sfatp i|init e|extr c|compress x|xdialog v|verbose" $*
+if [ $? -eq 0 ]; then
+  echo
+  echo "Use: $0 -h/--help for usage description"
+  exit 1
+fi
+
+# process help argument and exit
+[[ "$param_help" = "true" ]] && {
+  usage
+  exit 0
+}
+
+echo
+echo '************************************************************'
+echo '*                   SD Card Image Creator                  *'
+echo '************************************************************'
+echo
+echo " For printing all usable options use \"build_image -h\""
+echo
+
+[[ -z $CWD        ]] && CWD=$(pwd)
+[[ -z $UBOOT_DIR  ]] && UBOOT_DIR="$CWD/uboot"
+[[ -z $FAT16_DIR  ]] && FAT16_DIR="$CWD/kernel"
+[[ -z $EXT4_DIR   ]] && EXT4_DIR="$CWD/rootfs"
+# Image default settings
+[[ -z $IMAGE_NAME ]] && IMAGE_NAME="sdcard.img"
+[[ -z $FAT16_SIZE ]] && FAT16_SIZE=20
+[[ -z $IFREE_SIZE ]] && IFREE_SIZE=200
+# Image customizable settings
+[[ -z $param_sfree ]] || IFREE_SIZE=$param_sfree
+[[ -z $param_sfatp ]] || FAT16_SIZE=$param_sfatp
+# U-Boot settings
+POFFSET=1
+UBOOT_ISPL="$UBOOT_DIR/SPL"
+UBOOT_IMG1="$UBOOT_DIR/u-boot.img"
+UBOOT_IMG2="$UBOOT_DIR/u-boot.imx"
+UBOOT_ENV="$UBOOT_DIR/u-boot_env.bin"
+# Log file name
+FLOG=$CWD/build_image.log
+
+[[ -z $param_init ]] || {
+  [[ -d $UBOOT_DIR  ]] || mkdir $UBOOT_DIR
+  [[ -d $FAT16_DIR  ]] || mkdir $FAT16_DIR
+  [[ -d $EXT4_DIR   ]] || mkdir $EXT4_DIR
+  echo "INFO: Dirs was successfully created !"
+  echo "INFO: Add your data and repeat execution of \"build_image\""
+  echo
+  exit 0
+}
+
+secho() {
+  echo >> $FLOG; echo "$2" >> $FLOG; echo >> $FLOG
+  echo $1 "$2"
+}
+
+# -----------------------------------------------------------------------------------------
+# Make sure only root can run this script
+# -----------------------------------------------------------------------------------------
+if [ "$(id -u)" != "0" ]; then
+   eprint "This script must be run as root"
+   exit 1
+fi
+
+# -----------------------------------------------------------------------------------------
+# Check if installed required packages and install if doesn't
+# -----------------------------------------------------------------------------------------
+check_package "parted"
+check_package "gzip"
+check_package "zip"
+
+if [ "$param_xdialog" = "true" ]; then
+  check_package "zenity"
+  MENUCONFIG="xconfig"
+else
+  MENUCONFIG="menuconfig"
+fi
+
+if [ -z "$(which fdisk)" ]; then
+  SDTOOL="parted"
+else
+  SDTOOL="fdisk"
+fi
+
+# -----------------------------------------------------------------------------------------
+# Add partition support to loop device
+# -----------------------------------------------------------------------------------------
+LOOP_TYPE="PART"
+LOOP_PARAM_PATH="/sys/module/loop/parameters/max_part"
+[[ -e $LOOP_PARAM_PATH && $(cat $LOOP_PARAM_PATH) -lt 2 ]] && modprobe -r loop >>$FLOG 2>&1
+[[ ! -e $LOOP_PARAM_PATH ]] && modprobe loop max_part=31 >>$FLOG 2>&1
+[[ ! -e $LOOP_PARAM_PATH || $(cat $LOOP_PARAM_PATH) -lt 2 ]] && LOOP_TYPE="NOPART"
+LOOP_DEV=$(losetup -f)
+
+# -----------------------------------------------------------------------------------------
+# Extract image
+# -----------------------------------------------------------------------------------------
+if [ ! -z $param_extr ]; then
+
+  [[ -e $param_extr ]] || {
+    echo "File $param_extr doesnt exist !"
+    exit 1
+  }
+
+  SDIMG=$CWD/$param_extr
+
+  [[ -d $UBOOT_DIR  ]] || mkdir $UBOOT_DIR
+  [[ -d $FAT16_DIR  ]] || mkdir $FAT16_DIR
+  [[ -d $EXT4_DIR   ]] || mkdir $EXT4_DIR
+
+  secho -n "[INFO] Mount SD image ................................. "
+  if [ $LOOP_TYPE == "PART" ]; then
+    LOOP_DEV1="${LOOP_DEV}p1"
+    LOOP_DEV2="${LOOP_DEV}p2"
+    losetup $LOOP_DEV $SDIMG
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't create $LOOP_DEV from $IMAGE_NAME. See $FLOG"
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+    sync # wait for finish
+    echo "Done"
+
+    secho -n "[INFO] Extract UBOOT from SD image .................... "
+    dd if=$LOOP_DEV of=$UBOOT_DIR/u-boot.imx bs=512 seek=2 count=1000 conv=fsync >>$FLOG 2>&1
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't extract u-boot.imx from SD card. See $FLOG"
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+    echo "Done"
+
+    secho -n "[INFO] Extract FAT partition from SD image ............ "
+    TMPDIR=$(mktemp -d)
+    mount $LOOP_DEV1 $TMPDIR >>$FLOG 2>&1
+    cp -rf $TMPDIR/* $FAT16_DIR >>$FLOG 2>&1
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't copy data from FAT16 partition. See $FLOG"
+      umount $LOOP_DEV1
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+    sync
+    umount $LOOP_DEV1 >>$FLOG 2>&1
+    rm -d $TMPDIR
+    echo "Done"
+
+    secho -n "[INFO] Extract EXT partition from SD image ............ "
+    TMPDIR=$(mktemp -d)
+    mount $LOOP_DEV2 $TMPDIR >> $FLOG 2>&1
+    sync
+    cd $TMPDIR
+    [[ -e $EXT4_DIR/sd_rootfs.tar.gz ]] && rm -rf $EXT4_DIR/sd_rootfs.tar.gz
+    tar -czvf $EXT4_DIR/sd_rootfs.tar.gz . >> $FLOG 2>&1   
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't copy data from EXT4 partition. See $FLOG"
+      sync
+      cd $CWD
+      umount $LOOP_DEV2
+      rm -rfd $TMPDIR
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+    sync
+    cd $CWD
+    umount $TMPDIR >>$FLOG 2>&1
+    rm -d $TMPDIR
+    losetup -d $LOOP_DEV
+    echo "Done"
+
+    [[ -f $FLOG ]] && rm -f $FLOG
+
+    echo
+    echo "------------------------------------------------------------"
+    echo "    Congratulation, SD Card image successfully extracted"
+    echo "------------------------------------------------------------"
+    echo "    Outputs are in uboot, kernel and rootfs directories"
+    echo "------------------------------------------------------------"
+    echo
+  else
+    echo "Not supported partitions for loop device"
+  fi
+
+  exit 0
+fi
+
+# -----------------------------------------------------------------------------------------
+# Check required dirs
+# -----------------------------------------------------------------------------------------
+[[ -d $EXT4_DIR ]] || {
+  eprint "Directory with RootFS data doesn't exist !"
+  exit 1
+}
+
+ROTFS_PKGS=($(find ${EXT4_DIR} -mindepth 1 -maxdepth 1 -type f \( -name '*.tar' -o -name '*.gz' -o -name '*.xz' -o -name '*.bz2' \) -printf '%f\n'))
+ROTFS_DATS=($(find ${EXT4_DIR} -mindepth 1 -maxdepth 1 -type d -printf '%f\n'))
+
+if [ ${#ROTFS_PKGS[@]} -eq 0 ]; then
+  ROTFS_PKG=""
+elif [ ${#ROTFS_PKGS[@]} -eq 1 ]; then
+  ROTFS_PKG="$EXT4_DIR/${ROTFS_PKGS[0]}"
+else
+  list_dialog 'Select rootfs package' "${ROTFS_PKGS[@]}"
+  ROTFS_PKG="$EXT4_DIR/$RET_VALUE"
+  dprint "Root FS PKG:  $RET_VALUE"
+fi   
+
+if [ ${#ROTFS_DATS[@]} -eq 0 ]; then
+  ROTFS_DAT=""
+elif [ ${#ROTFS_DATS[@]} -eq 1 ]; then
+  ROTFS_DAT="$EXT4_DIR/${ROTFS_DATS[0]}"
+else
+  list_dialog 'Select rootfs mydata dir' "${ROTFS_DATS[@]}"
+  ROTFS_DAT="$EXT4_DIR/$RET_VALUE"
+  dprint "Root FS DATA: $RET_VALUE"
+fi 
+
+if [ -z $ROTFS_PKG -a -z $ROTFS_DAT ]; then
+  eprint "RootFS data doesn't exist !"
+  exit 1
+fi
+
+[[ -f $FLOG ]] && rm $FLOG
+
+echo
+
+# -----------------------------------------------------------------------------------------
+# Calculating Image Size
+# -----------------------------------------------------------------------------------------
+secho -n "[INFO] Calculating the Image size ..................... "
+
+if [ -z $ROTFS_PKG ]; then
+  ROTFS_SIZE=0
+else
+  ROTFS_SIZE=$(tar -xf $ROTFS_PKG --to-stdout | wc -c)
+fi
+
+if [ -d $ROTFS_DAT ]; then
+  DATA_SIZE=$(du -s --block-size=1 $ROTFS_DAT | cut -f1)
+  ROTFS_SIZE=$(($ROTFS_SIZE + $DATA_SIZE)) 
+fi
+
+IMAGE_SIZE=$(($ROTFS_SIZE/1000000 + $FAT16_SIZE + $IFREE_SIZE))
+
+echo "Done"
+
+# -----------------------------------------------------------------------------------------
+# Creating Empty Image File
+# -----------------------------------------------------------------------------------------
+[ -e $IMAGE_NAME ] && rm $IMAGE_NAME
+secho -n "[INFO] Creating empty ${IMAGE_NAME} file ................. "
+
+touch $IMAGE_NAME
+if [ $? -ne 0 ]; then
+  echo "Err"
+  eprint "Can't create empty file $IMAGE_NAME"
+  exit 1
+fi
+
+dd if=/dev/zero of=$IMAGE_NAME bs=1M count=1 conv=fsync >>$FLOG 2>&1
+dd if=/dev/zero of=$IMAGE_NAME bs=1M count=0 seek=$IMAGE_SIZE conv=fsync >>$FLOG 2>&1
+#dd if=/dev/zero of=$IMAGE_NAME bs=1M count=$IMAGE_SIZE conv=fsync >>$FLOG 2>&1
+if [ $? -ne 0 ]; then
+  echo "Err"
+  eprint "Can't write into ${IMAGE_NAME}. See $FLOG"
+  exit 1
+fi
+
+echo "Done"
+
+# -----------------------------------------------------------------------------------------
+# Creating MBR and Partitions in Image File
+# -----------------------------------------------------------------------------------------
+secho -n "[INFO] Creating MBR and partitions in ${IMAGE_NAME} ...... "
+
+if [ "$SDTOOL" == "parted" ]; then
+  parted -s ${IMAGE_NAME} mklabel msdos \
+    mkpart primary fat16 ${POFFSET}MiB ${FAT16_SIZE}MiB \
+    mkpart primary ext4 $((${POFFSET} + ${FAT16_SIZE}))MiB -- -1s \
+    set 1 boot on >>$FLOG 2>&1
+else
+  fdisk ${IMAGE_NAME} >>$FLOG 2>&1 <<END
+o
+n
+p
+1
+$((${POFFSET}*2*1024))
++${FAT16_SIZE}M
+n
+p
+2
+
+
+t
+1
+e
+a
+1
+w
+END
+fi
+
+if [ $? -ne 0 ]; then
+  echo "Err"
+  eprint "Can't create MBR in ${IMAGE_NAME}. See $FLOG"
+  exit 1
+fi
+
+echo "Done"
+
+# -----------------------------------------------------------------------------------------
+# Copy U-Boot into Image File
+# -----------------------------------------------------------------------------------------
+if [ ! -z "$UBOOT_DIR" ]; then
+  secho -n "[INFO] Copy u-boot into $IMAGE_NAME .................... "
+
+  losetup $LOOP_DEV $IMAGE_NAME
+  if [ $? -ne 0 ]; then
+    echo "Err"
+    eprint "Can't create $LOOP_DEV from ${IMAGE_NAME}. See $FLOG"
+    exit 1
+  fi
+  
+  if [ -f "$UBOOT_ISPL" ]; then
+    dd if=$UBOOT_ISPL of=$LOOP_DEV bs=1K seek=1 conv=fsync >>$FLOG 2>&1
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't write SPL into $IMAGE_NAME. See $FLOG"
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+    
+    dd if=$UBOOT_IMG1 of=$LOOP_DEV bs=1K seek=69 conv=fsync >>$FLOG 2>&1
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't write u-boot.img into $IMAGE_NAME. See $FLOG"
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+  else
+    if [ -f "$UBOOT_IMG2" ]; then
+      dd if=$UBOOT_IMG2 of=$LOOP_DEV bs=512 seek=2 conv=fsync >>$FLOG 2>&1
+      if [ $? -ne 0 ]; then
+        echo "Err"
+        eprint "Can't write u-boot.imx into $IMAGE_NAME. See $FLOG"
+        losetup -d $LOOP_DEV
+        exit 1
+      fi
+    fi
+  fi
+  
+  if [ -f "$UBOOT_ENV" ]; then
+    dd if=$UBOOT_ENV of=$LOOP_DEV bs=512 seek=1026 conv=fsync >>$FLOG 2>&1
+    if [ $? -ne 0 ]; then
+      echo "Err"
+      eprint "Can't write u-boot_env.bin into $IMAGE_NAME. See $FLOG"
+      losetup -d $LOOP_DEV
+      exit 1
+    fi
+  fi
+  
+  losetup -d $LOOP_DEV
+  # wait for finish
+  sync
+
+  echo "Done"
+fi
+
+
+# -----------------------------------------------------------------------------------------
+# Mount image as loop device (if partitions are supported)
+# -----------------------------------------------------------------------------------------
+#LOOP_DEV=$(losetup -f)
+
+if [ $LOOP_TYPE == "PART" ]; then
+  LOOP_DEV1="${LOOP_DEV}p1"
+  LOOP_DEV2="${LOOP_DEV}p2"
+  losetup $LOOP_DEV $IMAGE_NAME
+  if [ $? -ne 0 ]; then
+    echo "Err"
+    eprint "Can't create $LOOP_DEV from $IMAGE_NAME. See $FLOG"
+    losetup -d $LOOP_DEV
+    exit 1
+  fi
+
+  # wait for finish
+  sync
+fi
+
+# -----------------------------------------------------------------------------------------
+# Format FAT16 partition and copy Kernel + DTS
+# -----------------------------------------------------------------------------------------
+secho -n "[INFO] Format FAT16 partition and copy Kernel + DTS ... "
+
+if [ $LOOP_TYPE == "NOPART" ]; then
+  LOOP_DEV1=$LOOP_DEV
+  losetup -o $(($POFFSET * 1024 * 1024)) --sizelimit $(($FAT16_SIZE * 1024 * 1024)) ${LOOP_DEV} $IMAGE_NAME >>$FLOG 2>&1
+  if [ $? -ne 0 ]; then
+    echo "Err"
+    eprint "Can't create $LOOP_DEV from $IMAGE_NAME. See $FLOG"
+    losetup -d $LOOP_DEV
+    exit 1
+  fi
+fi
+
+mkfs.vfat -F 16 -n BOOT -I $LOOP_DEV1 >>$FLOG 2>&1
+if [ $? -ne 0 ]; then
+  echo "Err"
+  eprint "Can't format partition 1 (FAT16) in $IMAGE_NAME. See $FLOG"
+  losetup -d $LOOP_DEV
+  exit 1
+fi
+
+TMPDIR=$(mktemp -d)
+mount $LOOP_DEV1 $TMPDIR >>$FLOG 2>&1
+# copy rootfs data
+[[ -d $FAT16_DIR ]] && cp -rf $FAT16_DIR/* $TMPDIR >>$FLOG 2>&1
+# wait for finish
+sync
+
+umount $LOOP_DEV1 >>$FLOG 2>&1
+rm -d $TMPDIR
+[[ $LOOP_TYPE == "NOPART" ]] && losetup -d $LOOP_DEV
+
+echo "Done"
+
+# -----------------------------------------------------------------------------------------
+# Format EXT4  partition and copy rootfs data
+# -----------------------------------------------------------------------------------------
+secho -n "[INFO] Format EXT4  partition and copy rootfs data .... "
+
+if [ $LOOP_TYPE == "NOPART" ]; then
+  LOOP_DEV2=$LOOP_DEV
+  losetup -o $((($POFFSET + $FAT16_SIZE) * 1024 * 1024)) ${LOOP_DEV} $IMAGE_NAME >>$FLOG 2>&1
+  if [ $? -ne 0 ]; then
+    echo "Err"
+    eprint "Can't create $LOOP_DEV from $IMAGE_NAME. See $FLOG"
+    losetup -d $LOOP_DEV
+    exit 1
+  fi
+fi
+
+mkfs.ext4 -F -q -L rootfs $LOOP_DEV2 >>$FLOG 2>&1
+if [ $? -ne 0 ]; then
+  echo "Err"
+  eprint "Can't format partition 2 (EXT4) in $IMAGE_NAME"
+  losetup -d $LOOP_DEV
+  exit 1
+fi
+
+TMPDIR=$(mktemp -d)
+mount $LOOP_DEV2 $TMPDIR >>$FLOG 2>&1
+# extract rootfs data
+[[ -z $ROTFS_PKG ]] || tar -xf $ROTFS_PKG -C $TMPDIR >>$FLOG 2>&1
+# copy rootfs data
+[[ -d $ROTFS_DAT ]] && cp -rf $ROTFS_DAT/* $TMPDIR >>$FLOG 2>&1
+# wait for finish
+sync
+
+umount $LOOP_DEV2 >>$FLOG 2>&1
+rm -d $TMPDIR
+
+losetup -d $LOOP_DEV
+
+echo "Done"
+
+# -----------------------------------------------------------------------------------------
+# Compress created image file
+# -----------------------------------------------------------------------------------------
+if [ ! -z "$param_compress" ]; then
+  secho -n "[INFO] Compress created image file .................... "
+  if [ "$param_compress" == "gzip" ]; then
+    IMGEXT=".tgz"
+    PKGTOOL="tar -czf"
+  else
+    IMGEXT=".zip"
+    PKGTOOL="zip -9"
+  fi
+
+  [ -e $IMAGE_NAME$IMGEXT ] && rm $IMAGE_NAME$IMGEXT
+  
+  $PKGTOOL $IMAGE_NAME$IMGEXT $IMAGE_NAME >>$FLOG 2>&1
+  if [ $? -ne 0 ]; then
+    echo "Err"
+    eprint "Can't create ${IMAGE_NAME}. See $FLOG"
+    exit 1
+  fi
+
+  [ -e $IMAGE_NAME ] && rm $IMAGE_NAME
+
+  echo "Done"
+fi
+
+[[ -f $FLOG ]] && rm -f $FLOG
+
+echo
+echo "------------------------------------------------------------"
+echo "     Congratulation, SD Card image successfully created"
+echo "------------------------------------------------------------"
+echo " Name: ${IMAGE_NAME}${IMGEXT} | Size: ${IMAGE_SIZE} MB | Free: ${IFREE_SIZE} MB"
+echo "------------------------------------------------------------"
+echo
+

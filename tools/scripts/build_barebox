@@ -1,0 +1,294 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+usage() {
+cat << EOF
+Usage: $0 [options] [params]
+
+BareBox build script for i.MX (NXP MPU)
+  - use "bpatch" dir for aplying new patches
+  - use "bconf" dir for aplying own "config"
+
+OPTIONS:
+   -h/--help   Show this message
+   -u/--updt   Update working branch from remote branch
+   -c/--clean  Clean sources (remove all uncomited changes)
+   -p/--patch  Create patch from working sources
+   -m/--mcfg   Run menuconfig
+   -x          Use XDialog
+   -v          Verbose
+
+PARAMS:
+   -s/--surl   Set GitRepo URL for BareBox SRC (optional)
+   -t/--btool  Set path for external toolchain (optional)
+
+EOF
+}
+
+# Get the params from arguments provided
+argparse "?|h|help c|clean m|mcfg p|patch u|updt x|xdialog v|verbose s|surl t|btool" $*
+if [ $? -eq 0 ]; then
+  echo
+  echo "Use: $0 -h/--help for usage description"
+  exit 1
+fi
+
+# process help argument and exit
+[[ "$param_help" = "true" ]] && {
+    usage
+    exit 0
+}
+
+echo
+echo '***********************************************************'
+echo '*                    BareBox Compiler                     *'
+echo '***********************************************************'
+echo
+echo " For printing all usable options use \"build_barebox -h\""
+echo
+
+# Check if instaled required packages and install if doesn't
+check_package "build-essential"
+check_package "git"
+
+if [ "$param_xdialog" = "true" ]; then
+    check_package "zenity"
+    MENUCONFIG="xconfig"
+else
+    MENUCONFIG="menuconfig"
+fi
+
+CWD=$(pwd)
+
+if [ -e "$CWD/toolchain" ]; then
+  . $CWD/toolchain
+fi
+
+# ----------------------------------------------------------------
+# TOOLCHAIN INIT
+# ----------------------------------------------------------------
+# test toolchain argument if working
+if [ ! -z ${param_btool} ]; then
+  ${param_btool}gcc -v &>/dev/null
+  if [ $? -ne 0 ]; then
+    wprint " Compiler: ${param_btool} doesn't work,\n will be used internal !"
+  else
+    COMPILER=${param_btool}
+  fi
+fi
+# search for internal toolchain if not explicitly specified
+if [ -z $COMPILER ]; then
+  echo "[INFO ] Searching Toolchain ... please wait !"
+  find_toolchain "/opt /usr/bin /usr/sbin $HOME"
+  if [ -z $RET_VALUE ]; then
+    eprint "Toolchain not installed, please run \"build_toolchain\" first"
+    exit 1
+  fi
+  COMPILER=$RET_VALUE
+fi
+
+# Default BareBox repos             
+URLS=('git://git.pengutronix.de/git/barebox.git')
+
+
+# Working dirs
+[[ -z $OUT_DIR     ]] && OUT_DIR="$CWD/out"
+[[ -z $SRC_DIR     ]] && SRC_DIR="$CWD/src_barebox"
+[[ -z $STATE_DIR   ]] && STATE_DIR="$SRC_DIR/.state"
+[[ -z $PATCH_DIR   ]] && PATCH_DIR="$CWD/bpatch"
+[[ -z $CONF_DIR    ]] && DTS_DIR="$CWD/bconf"
+
+# Optional params
+[[ -z $param_surl  ]] || SRC_URL=$param_surl
+
+# Verbose outputs
+dprint "<< Toolchain >>"
+dprint "Path: ${COMPILER%/*}"
+dprint "Exec: ${COMPILER##*/}"
+dprint "Version: $(${COMPILER}gcc -dumpversion)"
+
+dprint "<< Directories >>"
+dprint "CWD: $CWD"
+dprint "OUT_DIR: $OUT_DIR"
+dprint "SRC_DIR: $SRC_DIR"
+dprint "STATE_DIR: $STATE_DIR"
+dprint "PATCH_DIR: $PATCH_DIR"
+
+echo "COMPILER=\"$COMPILER\"" > $CWD/toolchain
+
+if [ -e $STATE_DIR/src_cloned ]; then
+  cd $SRC_DIR
+
+  SRC_URL=$(cat $STATE_DIR/src_cloned)
+  BRANCH=$(git branch | grep "*" | sed 's/* //')
+ 
+  if [ "$param_clean" = "true" ]; then
+    dprint "Clean source directory"
+    git clean -dfx &>/dev/null
+    git checkout . &>/dev/null
+    mkdir -p $STATE_DIR
+    echo $SRC_URL > $STATE_DIR/src_cloned
+    SRC_CLEAN="true"
+  fi
+
+  dprint "SRC_URL   = $SRC_URL"
+  dprint "SRC_BRNCH = $BRANCH"
+  
+  # update actual branch
+  if [ "$param_updt" = "true" ]; then
+    git pull &>/dev/null
+  fi
+else
+  if [ -z $SRC_URL ]; then
+    if [ ${#URLS[@]} -gt 1 ]; then
+      list_dialog 'Select source repository' "${URLS[@]}"
+      SRC_URL=$RET_VALUE
+    else
+      SRC_URL=${URLS[0]}
+      msg_dialog 'question' "Clone repo: ${SRC_URL}"
+      if [ "$RET_VALUE" = "NO"  ]; then 
+        exit 0
+      fi
+    fi
+  fi
+
+  [[ -d $SRC_DIR ]] && rm -rf $SRC_DIR
+
+  # clone new repo
+  dprint "Clone GIT repo: $SRC_URL"
+  git clone $SRC_URL $SRC_DIR || {
+    eprint 'GIT Clone Error'
+    cd $CWD
+    exit 1
+  }
+
+  NEW_CLONE="true"
+  mkdir -p $STATE_DIR
+  echo $SRC_URL > $STATE_DIR/src_cloned
+  cd $SRC_DIR
+fi
+
+# select working branch
+if [ "$SRC_CLEAN" = "true" -o "$NEW_CLONE" = "true"  ]; then
+  BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+  if [ ${#BRANCHES[@]} -eq 0 ]; then
+    eprint " No branches found in repo: ${SRC_URL}"
+    exit 1
+  fi
+
+  list_dialog 'Select branch' "${BRANCHES[@]}"
+  BRANCH=$RET_VALUE
+
+  git checkout $BRANCH || {
+    eprint 'Git Checkout Error'
+    cd $CWD
+    exit 1
+  }
+fi
+
+# apply patches from patch directory if exist
+if [ -d $PATCH_DIR ]; then    
+  for patch in $(ls $PATCH_DIR | sort); do
+    [[ -e "$STATE_DIR/aplied_patches/$patch" ]] && continue
+    patch -p1 < $PATCH_DIR/$patch || {
+      eprint " Patch $patch Error"
+      cd $CWD
+      exit 1
+    }
+    [[ -d "$STATE_DIR/aplied_patches" ]] || mkdir -p $STATE_DIR/aplied_patches
+    touch $STATE_DIR/aplied_patches/$patch
+  done
+fi
+
+# load default configs
+if [ ! -e $SRC_DIR/.config -o "$NEW_CLONE" = "true" -o "$SRC_CLEAN" = "true" ]; then
+  if [ -e "$CONF_DIR/config" ]; then
+    MYCONFIG="dconf/config"
+    cp -f $CONF_DIR/config .config
+  else    
+    MYCONFIG="imx_v7_defconfig"
+    make ARCH=arm $MYCONFIG || {
+      eprint " Load default config: $MYCONFIG Error"
+      cd $CWD
+      exit 1
+    }  
+  fi  
+  
+  msg_dialog 'question' "Run Configuration Wizard ?"
+fi
+
+# run menuconfig wizard
+if [ "$param_mcfg" = "true" -o "$RET_VALUE" = "YES" ]; then
+  make ARCH=arm $MENUCONFIG || {
+    eprint ' Menuconfig Error'
+    cd $CWD
+    exit 1
+  }
+
+  msg_dialog 'question' "Compile with updated config ?"
+  if [ "$RET_VALUE" = "NO"  ]; then 
+    exit 0
+  fi
+fi
+
+unset LDFLAGS
+
+# compile barebox
+make -j ${MAKEJOBS} ARCH=arm CROSS_COMPILE=$COMPILER all || {
+  eprint ' BareBox Compolation Error'
+  cd $CWD
+  exit 1
+}
+
+BNAME='barebox_imx6'
+[ -d "$OUT_DIR/${BNAME}" ] && rm -rf "$OUT_DIR/${BNAME}"
+mkdir -p $OUT_DIR/${BNAME}/images
+
+# Copy images into out directory
+for i in $(ls $SRC_DIR/images/*.img); do
+  cp $i $OUT_DIR/${BNAME}/images
+done
+cp $SRC_DIR/.config $OUT_DIR/${BNAME}/barebox_config
+
+# Create barebox_info.txt file
+echo "Repo url: $SRC_URL" > $OUT_DIR/${BNAME}/barebox_info.txt
+echo "Branch:   $BRANCH" >> $OUT_DIR/${BNAME}/barebox_info.txt
+if [ -d $STATE_DIR/aplied_patches ]; then
+  echo "Applied patches:" >> $OUT_DIR/${BNAME}/barebox_info.txt
+  for i in $(ls $STATE_DIR/aplied_patches); do
+    echo " - $i" >> $OUT_DIR/${BNAME}/barebox_info.txt
+  done
+fi
+
+# Create patch
+if [ "$param_patch" = "true" ]; then
+  make distclean
+  git stash -u
+  git stash show -p > $OUT_DIR/${BNAME}/barebox_${BRANCH}.patch
+  git stash pop
+fi
+
+echo
+echo " ---------------------------------------------------------------"
+echo "          Congratulation, BareBox build was successful"
+echo " ---------------------------------------------------------------"
+echo " Created files are stored in:"
+echo " $OUT_DIR/i${BNAME}"
+echo " ---------------------------------------------------------------"
+echo
+
+cd $CWD

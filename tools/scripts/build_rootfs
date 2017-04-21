@@ -1,0 +1,494 @@
+#!/bin/bash
+#################################################################################
+# Author: Martin Olejar
+#################################################################################
+
+if [ -z "$(which readlink)" ]; then
+  echo "install readlink package"
+  exit 1
+fi
+
+# load functions
+SCRIPTS_DIR=$(dirname $(readlink -e $0))
+. $SCRIPTS_DIR/functions
+
+CORES=$(grep -c ^processor /proc/cpuinfo)
+#CORES=$(getconf _NPROCESSORS_ONLN)
+
+usage() {
+cat << EOF
+Usage: $0 [options]
+
+RootFS creator script for i.MX (NXP MPU)
+  - use "mydata" dir for aditional files
+
+OPTIONS:
+   -h/--help   Show this message
+   -i          Create initial config
+   -x          Use XDialog
+   -v          Verbose
+
+EOF
+}
+
+# Get the params from arguments provided
+argparse "?|h|help i|init x|xdialog v|verbose" $*
+if [ $? -eq 0 ]; then
+  echo
+  echo "Use: $0 -h/--help for usage description"
+  exit 1
+fi
+
+# process help argument and exit
+[[ "$param_help" = "true" ]] && {
+  usage
+  exit 0
+}
+
+echo
+echo '***********************************************************'
+echo '*                     RootFS Creator                      *'
+echo '***********************************************************'
+echo
+echo " For printing all usable options use \"build_rootfs -h\""
+echo
+
+# Make sure only root can run this script
+if [ "$(id -u)" != "0" ]; then
+   eprint "This script must be run as root"
+   exit 1
+fi
+
+# Check if instaled required packages and install if doesn't
+check_package "qemu-user-static"
+check_package "binfmt-support"
+check_package "debootstrap"
+check_package "binutils"
+check_package "gzip"
+
+if [ "$param_xdialog" = "true" ]; then
+  check_package "zenity"
+  MENUCONFIG="xconfig"
+else
+  MENUCONFIG="menuconfig"
+fi
+
+
+# Set board specific variables:
+# DUART (device name of imx debug uart)
+# SDCRD (device name of imx root storage)
+SelectBoard() {
+  # Colection of supported boards
+  # ----------------------------------------
+  # <BoardName>|<DebugUartName>|<SDCardName>
+  local BOARDS=("imx6sl-evk|ttymxc0|mmcblk0"
+                "imx6sx-sdb|ttymxc0|mmcblk0"
+                "imx6sx-sabreauto|ttymxc0|mmcblk0"
+                "imx6dl-sabresd|ttymxc0|mmcblk0"
+                "imx6dl-sabreauto|ttymxc0|mmcblk0"
+                "imx6dl-sabrelite|ttymxc0|mmcblk0"
+                "imx6dl-udoo|ttymxc0|mmcblk0"
+                "imx6q-sabresd|ttymxc0|mmcblk0"
+                "imx6q-sabreauto|ttymxc0|mmcblk0"
+                "imx6q-sabrelite|ttymxc0|mmcblk0"
+                "imx6qp-sabresd|ttymxc0|mmcblk0"
+                "imx6qp-sabreauto|ttymxc0|mmcblk0"
+                "imx6ul-9x9-evk|ttymxc0|mmcblk0"
+                "imx6ul-14x14-evk|ttymxc0|mmcblk1"
+                "imx7d-12x12|ttymxc0|mmcblk0"
+                "imx7d-19x19|ttymxc0|mmcblk0"
+                "imx7d-sdb|ttymxc0|mmcblk0")
+
+  local NAMES=() 
+  for brd in ${BOARDS[@]}; do
+    brd=(${brd//|/ })
+    NAMES+=(${brd[0]})
+  done
+
+  list_dialog 'Select Board' "${NAMES[@]}"
+  ROOTFS_BOARD=$RET_VALUE
+
+  for brd in ${BOARDS[@]}; do
+    brd=(${brd//|/ })
+
+    if [ "${brd[0]}" = "$ROOTFS_BOARD" ]; then
+      ROOTFS_DUART=${brd[1]}
+      ROOTFS_SDCRD=${brd[2]}
+      break
+    fi
+  done
+}
+
+# Set distribution specific variables:
+# DISTRO (distribution name)
+# CODENAME (release code name)
+SelectDistro() {
+  # Colection of supported distributions
+  # ----------------------------------------
+  # <Name>|<Release>
+  local DISTROS=("debian|stretch"
+                 "debian|jessie"
+                 "debian|wheezy"
+                 "ubuntu|xenial"
+                 "ubuntu|trusty"
+                 "ubuntu|lucid")
+
+  local NAMES=() 
+  for brd in ${DISTROS[@]}; do
+    brd=(${brd//|/ })
+    NAMES+=(${brd[0]}-${brd[1]})
+  done
+
+  list_dialog 'Select Distribution' "${NAMES[@]}"
+  # Distribution name
+  ROOTFS_DISTRO="${RET_VALUE%-*}"
+  # Distribution codename
+  ROOTFS_CODENAME="${RET_VALUE#*-}"
+  # Architecture
+  ROOTFS_ARCH="armhf"
+  # ...
+  case "$ROOTFS_DISTRO" in
+    debian)
+      ROOTFS_MIRROR="http://httpredir.debian.org/debian/"
+      ROOTFS_VARIANT="minbase" 
+      ROOTFS_INCLUDE="ca-certificates,openssh-server,build-essential,openssl,dialog,curl,dbus,less,locales"
+      ROOTFS_EXCLUDE="eject,fdutils"
+      ROOTFS_COMPONENTS="main,contrib,non-free"
+    ;;
+
+    ubuntu)
+      ROOTFS_MIRROR="http://ports.ubuntu.com/"
+      ROOTFS_VARIANT="minbase" 
+      #ROOTFS_INCLUDE="openssh-server,debconf-utils,apt,dialog"
+      ROOTFS_INCLUDE="ubuntu-keyring,apt-transport-https,ca-certificates,openssl,dialog,curl,dbus,less,locales"
+      ROOTFS_EXCLUDE=""
+      ROOTFS_COMPONENTS="main,contrib,non-free"
+      if [ "$ROOTFS_CODENAME" = "lucid" ]; then 
+          ROOTFS_ARCH="armel"
+          ROOTFS_INCLUDE="openssh-server,debconf-utils,apt,openssl,dialog,curl,dbus,less,locales"
+      fi
+    ;;
+
+    *)
+      eprint "Unsupported Distribution: $ROOTFS_DISTRO"
+      exit 1
+    ;;
+  esac
+}
+
+
+# ...
+MountChroot() {
+    echo "==> Mounting proc, sys and dev"
+
+    chroot $ROOTFS_TMPDIR mount proc /proc -t proc
+    chroot $ROOTFS_TMPDIR mount sysfs /sys -t sysfs
+    mkdir -p $ROOTFS_TMPDIR/dev/pts
+    mount --bind /dev/pts $ROOTFS_TMPDIR/dev/pts
+}
+
+# ...
+UmountChroot() {
+    echo "==> Unmounting proc, sys and dev"
+
+    if grep -qs "$ROOTFS_TMPDIR/dev/pts" $ROOTFS_TMPDIR/proc/mounts; then
+        echo "==> Unmounting /dev/pts in chroot"
+        umount -lf $ROOTFS_TMPDIR/dev/pts
+    fi
+
+    if grep -qs "$ROOTFS_TMPDIR/proc" $ROOTFS_TMPDIR/proc/mounts; then
+        umount -lf $ROOTFS_TMPDIR/proc
+    fi
+
+    if grep -qs "$ROOTFS_TMPDIR/sys" $ROOTFS_TMPDIR/proc/mounts; then
+        umount -lf $ROOTFS_TMPDIR/sys
+    fi
+}
+
+
+# Directories
+[[ -z $ROOTFS_CWD    ]] && ROOTFS_CWD=$(pwd)
+[[ -z $ROOTFS_OUTDIR ]] && ROOTFS_OUTDIR="$ROOTFS_CWD"
+[[ -z $ROOTFS_DATDIR ]] && ROOTFS_DATDIR="$ROOTFS_CWD/mydata"
+[[ -z $ROOTFS_TMPDIR ]] && ROOTFS_TMPDIR="$ROOTFS_CWD/rootfs"
+
+# Config File
+CONFIG_FILE=$ROOTFS_CWD/build.cfg
+
+# Load Config
+if [ -e $CONFIG_FILE ]; then
+  . $CONFIG_FILE
+
+  if [ "$PROJECT" != "ROOTFS" ]; then
+    eprint " You are in $PROJECT directory, use the correct dir !"
+    exit 1
+  fi
+fi
+
+if [ -z $ROOTFS_DISTRO ] || [ "$param_init" = "true" ]; then
+  # Select board
+  SelectBoard
+
+  # Select Distribution
+  SelectDistro
+
+  # Default Settings
+  ROOTFS_LANG="en_US.UTF-8"
+  ROOTFS_HOSTNAME="${ROOTFS_DISTRO}-imx"
+  ROOTFS_PASSWD=
+
+  # Save Config
+  echo "PROJECT=ROOTFS"                          > $CONFIG_FILE
+  echo "# Architecture"                         >> $CONFIG_FILE
+  echo "ROOTFS_ARCH=${ROOTFS_ARCH}"             >> $CONFIG_FILE
+  echo "# Distribution Specific"                >> $CONFIG_FILE
+  echo "ROOTFS_DISTRO=${ROOTFS_DISTRO}"         >> $CONFIG_FILE
+  echo "ROOTFS_CODENAME=${ROOTFS_CODENAME}"     >> $CONFIG_FILE
+  echo "ROOTFS_MIRROR=${ROOTFS_MIRROR}"         >> $CONFIG_FILE
+  echo "ROOTFS_VARIANT=${ROOTFS_VARIANT}"       >> $CONFIG_FILE
+  echo "ROOTFS_COMPONENTS=${ROOTFS_COMPONENTS}" >> $CONFIG_FILE
+  echo "ROOTFS_INCLUDE=${ROOTFS_INCLUDE}"       >> $CONFIG_FILE
+  echo "ROOTFS_EXCLUDE=${ROOTFS_EXCLUDE}"       >> $CONFIG_FILE
+  echo "# Board Specific"                       >> $CONFIG_FILE
+  echo "ROOTFS_BOARD=${ROOTFS_BOARD}"           >> $CONFIG_FILE
+  echo "ROOTFS_DUART=${ROOTFS_DUART}"           >> $CONFIG_FILE
+  echo "ROOTFS_SDCRD=${ROOTFS_SDCRD}"           >> $CONFIG_FILE
+  echo "# root password (if empty... disabled)" >> $CONFIG_FILE
+  echo "ROOTFS_PASSWD=${ROOTFS_PASSWD}"         >> $CONFIG_FILE
+  echo "ROOTFS_LANG=${ROOTFS_LANG}"             >> $CONFIG_FILE
+  echo "ROOTFS_HOSTNAME=${ROOTFS_HOSTNAME}"     >> $CONFIG_FILE
+
+  # Exit if 
+  if [ "$param_init" = "true" ]; then
+    echo "Edit ${CONFIG_FILE} if required and run: build_rootfs"
+    exit 0
+  fi
+fi
+
+echo "==> Installing $ROOTFS_DISTRO into $ROOTFS_TMPDIR"
+
+# Setup environment
+export LC_ALL=C LANGUAGE=C LANG=C
+export TZ=UTC
+
+# Create or clean rootfs temp dir
+[[ -d $ROOTFS_TMPDIR ]] && rm -rf $ROOTFS_TMPDIR/*
+[[ -d $ROOTFS_TMPDIR ]] || mkdir $ROOTFS_TMPDIR
+
+# Check qemu-arm-static
+if [ ! -e /usr/bin/qemu-arm-static ]; then
+  eprint " /usr/bin/qemu-arm-static doesnt exist !"
+  exit 1
+fi
+
+# set variables for debootstrap script
+[[ -z "${ROOTFS_INCLUDE}"    ]] || ROOTFS_INCLUDE="--include=${ROOTFS_INCLUDE}"
+[[ -z "${ROOTFS_EXCLUDE}"    ]] || ROOTFS_EXCLUDE="--exclude=${ROOTFS_EXCLUDE}"
+[[ -z "${ROOTFS_VARIANT}"    ]] || ROOTFS_VARIANT="--variant=${ROOTFS_VARIANT}"
+[[ -z "${ROOTFS_COMPONENTS}" ]] || ROOTFS_COMPONENTS="--components=${ROOTFS_COMPONENTS}"
+
+# create base rootfs with debootstrap
+debootstrap --arch=${ROOTFS_ARCH} ${ROOTFS_INCLUDE} ${ROOTFS_EXCLUDE} ${ROOTFS_COMPONENTS} ${ROOTFS_VARIANT} --foreign ${ROOTFS_CODENAME} ${ROOTFS_TMPDIR} ${ROOTFS_MIRROR}
+check_error "debootstrap error: first-stage"
+
+# prepare chroot pkg
+cp /usr/bin/qemu-arm-static $ROOTFS_TMPDIR/usr/bin/
+cp /etc/resolv.conf $ROOTFS_TMPDIR/etc
+
+# and keys
+if [ ! -d "$ROOTFS_TMPDIR/usr/share/keyrings/" ]; then
+  mkdir -p "$ROOTFS_TMPDIR/usr/share/keyrings/" && cp /usr/share/keyrings/debian-archive-keyring.gpg "$ROOTFS_TMPDIR/usr/share/keyrings/"
+fi
+
+# enable arm binary format so that the cross-architecture chroot environment will work
+[[ -e /proc/sys/fs/binfmt_misc/qemu-arm ]] || update-binfmts --enable qemu-arm
+
+# run second stage of debootstrap
+chroot $ROOTFS_TMPDIR /debootstrap/debootstrap --second-stage
+if [ $? -ne 0 ]; then
+  eprint "debootstrap error: second-stage"
+  exit 1
+fi
+
+# mount proc, sys and dev from chroot
+MountChroot
+
+echo "==> Setting TZ to UTC"
+rm $ROOTFS_TMPDIR/etc/localtime
+cp $ROOTFS_TMPDIR/usr/share/zoneinfo/UTC $ROOTFS_TMPDIR/etc/localtime
+
+echo "==> Setting locale to $ROOTFS_LANG"
+echo "$ROOTFS_LANG ${ROOTFS_LANG#*.}" >> $ROOTFS_TMPDIR/etc/locale.gen
+echo "LANG=\"${ROOTFS_LANG}\"" > $ROOTFS_TMPDIR/etc/default/locale
+chroot $ROOTFS_TMPDIR locale-gen
+
+echo "==> Updating $ROOTFS_TMPDIR/etc/apt/sources.list"
+if [ "$ROOTFS_DISTRO" = "ubuntu" ]; then
+  cat <<EOT > $ROOTFS_TMPDIR/etc/apt/sources.list
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME} main
+deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME} main
+
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-updates main
+deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-updates main
+
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}/updates main
+deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}/updates main
+EOT
+else
+  cat <<EOT > $ROOTFS_TMPDIR/etc/apt/sources.list
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME} main contrib non-free
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-updates main contrib non-free
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-proposed-updates main contrib non-free
+deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-backports main contrib non-free
+# sources
+deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME} main contrib non-free
+#deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-updates main contrib non-free
+#deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-proposed-updates main contrib non-free
+#deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-backports main contrib non-free
+#deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-kfreebsd main contrib non-free
+EOT
+
+  cat <<EOT > $ROOTFS_TMPDIR/etc/apt/apt.conf.d/71-no-recommends
+APT::Install-Recommends "0";
+APT::Install-Suggests "0";
+EOT
+fi
+
+echo "==> Updating packages"
+export DEBIAN_FRONTEND=noninteractive
+chroot $ROOTFS_TMPDIR apt-get -qq update
+chroot $ROOTFS_TMPDIR apt-get -qq upgrade
+
+# Get release version via os-release
+VERSION_ID=
+# shellcheck source=/dev/null
+CHECK_VERSION=$(. $ROOTFS_TMPDIR/etc/os-release && echo $VERSION_ID)
+
+echo "==> Installing additional packages"
+chroot $ROOTFS_TMPDIR apt-get -qq install ssh ntpdate
+if [[ "$ROOTFS_DISTRO" = "debian" ]]; then
+    if [[ "$CHECK_VERSION" -ge 9 ]] || [[ -z "$CHECK_VERSION" ]]; then
+        chroot $ROOTFS_TMPDIR apt-get -qq install --no-install-recommends software-properties-common
+    else
+        chroot $ROOTFS_TMPDIR apt-get -qq install --no-install-recommends python-software-properties software-properties-common
+    fi
+else
+    chroot $ROOTFS_TMPDIR apt-get -qq install --no-install-recommends software-properties-common
+fi
+
+echo "==> Cleaning up caches etc."
+chroot $ROOTFS_TMPDIR apt-get -qq autoremove
+chroot $ROOTFS_TMPDIR apt-get -qq clean
+
+echo "==> Creating user: ${ROOTFS_DISTRO} with password: ${ROOTFS_DISTRO}"
+chroot $ROOTFS_TMPDIR adduser --disabled-password --gecos '' ${ROOTFS_DISTRO}
+chroot $ROOTFS_TMPDIR usermod -aG adm,sudo,plugdev ${ROOTFS_DISTRO}
+chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_DISTRO}\n${ROOTFS_DISTRO}" | (passwd $ROOTFS_DISTRO)
+
+# set root password
+if [ -z $ROOTFS_PASSWD ]; then
+    sed -ri s/root:x:/root::/ -i $ROOTFS_TMPDIR/etc/passwd
+else
+    chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_PASSWD}\n${ROOTFS_PASSWD}" | (passwd root)
+fi
+
+# configure debug terminal
+if [ -d "$ROOTFS_TMPDIR/etc/systemd/system/getty.target.wants" ]; then
+  chroot $ROOTFS_TMPDIR ln -snf /lib/systemd/system/serial-getty@.service /etc/systemd/system/getty.target.wants/serial-getty@${ROOTFS_DUART}.service
+elif [ -f "$ROOTFS_TMPDIR/etc/inittab" ]; then
+  echo "T0:2345:respawn:/sbin/getty -L ${ROOTFS_DUART} 115200 vt100" >> $ROOTFS_TMPDIR/etc/inittab
+else
+  cat <<EOT > $ROOTFS_TMPDIR/etc/init/${ROOTFS_DUART}.conf
+# This service maintains a getty on ${ROOTFS_DUART}
+description "Get a getty on ${ROOTFS_DUART}"
+
+start on runlevel [2345]
+stop on runlevel [016]
+
+respawn
+
+exec /sbin/getty -L 115200 ${ROOTFS_DUART}
+EOT
+fi
+
+# Set up fstab
+cat <<EOM > $ROOTFS_TMPDIR/etc/fstab
+proc                    /proc   proc    defaults          0       0
+/dev/${ROOTFS_SDCRD}p2  /       ext4    defaults,noatime  0       1
+/dev/${ROOTFS_SDCRD}p1  /boot   vfat    defaults          0       2
+EOM
+
+# Set up hosts
+echo "${ROOTFS_HOSTNAME}" > $ROOTFS_TMPDIR/etc/hostname
+cat <<EOM > $ROOTFS_TMPDIR/etc/hosts
+127.0.0.1       localhost
+::1             localhost ip6-localhost ip6-loopback
+ff02::1         ip6-allnodes
+ff02::2         ip6-allrouters
+
+127.0.1.1       ${ROOTFS_DISTRO}
+EOM
+
+# Set up interfaces
+cat <<EOM > $ROOTFS_TMPDIR/etc/network/interfaces
+# interfaces(5) file used by ifup(8) and ifdown(8)
+# Include files from /etc/network/interfaces.d:
+source-directory /etc/network/interfaces.d
+
+# The loopback network interface
+auto lo
+iface lo inet loopback
+
+# The primary network interface
+#allow-hotplug eth0
+auto eth0
+iface eth0 inet dhcp
+EOM
+
+# wait for finis all tasks
+sync
+sleep 2
+
+# umount proc, sys and dev from chroot
+UmountChroot
+
+# remove temp files
+[[ -f $ROOTFS_TMPDIR/usr/bin/qemu-arm-static ]] && rm -f $ROOTFS_TMPDIR/usr/bin/qemu-arm-static
+[[ -f $ROOTFS_TMPDIR/etc/resolv.conf ]] && rm -f $ROOTFS_TMPDIR/etc/resolv.conf
+[[ -f $ROOTFS_TMPDIR/etc/resolvconf/resolv.conf.d/original ]] && rm -f $ROOTFS_TMPDIR/etc/resolvconf/resolv.conf.d/original
+[[ -f $ROOTFS_TMPDIR/etc/apt/sources.list.save ]] && rm -f $ROOTFS_TMPDIR/etc/apt/sources.list.save
+[[ -f $ROOTFS_TMPDIR/var/lib/urandom/random-seed ]] && rm -f $ROOTFS_TMPDIR/var/lib/urandom/random-seed
+[[ -L $ROOTFS_TMPDIR/var/lib/dbus/machine-id ]] || rm -f $ROOTFS_TMPDIR/var/lib/dbus/machine-id
+[[ -f $ROOTFS_TMPDIR/etc/machine-id ]] && rm -f $ROOTFS_TMPDIR/etc/machine-id
+[[ -f $ROOTFS_TMPDIR/root/.bash_history ]] && rm -f $ROOTFS_TMPDIR/root/.bash_history
+rm -f $ROOTFS_TMPDIR/etc/*-
+
+# fix selinux error
+[[ -d $ROOTFS_TMPDIR/selinux ]] || mkdir $ROOTFS_TMPDIR/selinux
+
+# copy custom data
+if [ -d $ROOTFS_DATDIR ]; then
+  cp -rf $ROOTFS_DATDIR/* $ROOTFS_DATDIR 2>/dev/null
+fi
+
+echo 
+echo " Creating tarball, please wait !!!"
+echo 
+TAR="${ROOTFS_DISTRO}_${ROOTFS_CODENAME}_imx_rootfs"
+tar -czvf ${TAR}.tar.gz --directory=$ROOTFS_TMPDIR --exclude='./proc/*' --exclude='./run/*' --exclude='./tmp/*' --exclude='./mnt/*' --exclude='./sys/*' .
+md5sum ${TAR}.tar.gz > ${TAR}.md5
+if [ "$ROOTFS_OUTDIR" != "$(pwd)" ]; then
+  [[ -d $ROOTFS_OUTDIR ]] || mkdir -p $ROOTFS_OUTDIR
+  mv ${TAR}* $ROOTFS_OUTDIR
+fi
+
+# Remove working directory
+rm -rf $ROOTFS_TMPDIR
+
+echo
+echo " ---------------------------------------------------------------"
+echo "         Congratulation, RootFS build was successful"
+echo " ---------------------------------------------------------------"
+echo " ${ROOTFS_OUTDIR}/${TAR}.tar.gz"
+echo " ---------------------------------------------------------------"
+echo
