@@ -1,2 +1,14 @@
+# Vagrant specific files      #
+###############################
+.vagrant
+*.log
+
+# Provisioning specific files #
+###############################
+share
+
+# Other
+###############################
 .idea
+
 

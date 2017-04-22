@@ -81,22 +81,18 @@ SelectBoard() {
   # Colection of supported boards
   # ----------------------------------------
   # <BoardName>|<DebugUartName>|<SDCardName>
-  local BOARDS=("imx6sl-evk|ttymxc0|mmcblk0"
-                "imx6sx-sdb|ttymxc0|mmcblk0"
-                "imx6sx-sabreauto|ttymxc0|mmcblk0"
+  local BOARDS=("imx6sl-evk|ttymxc0|mmcblk1"
+                "imx6sx-sdb|ttymxc0|mmcblk3"
+                "imx6sx-sabreauto|ttymxc0|mmcblk2"
                 "imx6dl-sabresd|ttymxc0|mmcblk0"
                 "imx6dl-sabreauto|ttymxc0|mmcblk0"
-                "imx6dl-sabrelite|ttymxc0|mmcblk0"
                 "imx6dl-udoo|ttymxc0|mmcblk0"
-                "imx6q-sabresd|ttymxc0|mmcblk0"
-                "imx6q-sabreauto|ttymxc0|mmcblk0"
-                "imx6q-sabrelite|ttymxc0|mmcblk0"
-                "imx6qp-sabresd|ttymxc0|mmcblk0"
-                "imx6qp-sabreauto|ttymxc0|mmcblk0"
-                "imx6ul-9x9-evk|ttymxc0|mmcblk0"
-                "imx6ul-14x14-evk|ttymxc0|mmcblk1"
-                "imx7d-12x12|ttymxc0|mmcblk0"
-                "imx7d-19x19|ttymxc0|mmcblk0"
+                "imx6q-sabresd|ttymxc3|mmcblk3"
+                "imx6q-sabreauto|ttymxc3|mmcblk2"
+                "imx6qp-sabresd|ttymxc3|mmcblk3"
+                "imx6qp-sabreauto|ttymxc3|mmcblk2"
+                "imx6ul-evk|ttymxc0|mmcblk1"
+                "imx6ull-evk|ttymxc0|mmcblk1"
                 "imx7d-sdb|ttymxc0|mmcblk0")
 
   local NAMES=() 
@@ -113,7 +109,7 @@ SelectBoard() {
 
     if [ "${brd[0]}" = "$ROOTFS_BOARD" ]; then
       ROOTFS_DUART=${brd[1]}
-      ROOTFS_SDCRD=${brd[2]}
+      ROOTFS_SDCARD=${brd[2]}
       break
     fi
   done
@@ -151,7 +147,7 @@ SelectDistro() {
     debian)
       ROOTFS_MIRROR="http://httpredir.debian.org/debian/"
       ROOTFS_VARIANT="minbase" 
-      ROOTFS_INCLUDE="ca-certificates,openssh-server,build-essential,openssl,dialog,curl,dbus,less,locales"
+      ROOTFS_INCLUDE="ca-certificates,openssh-server,build-essential,apt-utils,openssl,dialog,curl,dbus,less,locales"
       ROOTFS_EXCLUDE="eject,fdutils"
       ROOTFS_COMPONENTS="main,contrib,non-free"
     ;;
@@ -159,8 +155,7 @@ SelectDistro() {
     ubuntu)
       ROOTFS_MIRROR="http://ports.ubuntu.com/"
       ROOTFS_VARIANT="minbase" 
-      #ROOTFS_INCLUDE="openssh-server,debconf-utils,apt,dialog"
-      ROOTFS_INCLUDE="ubuntu-keyring,apt-transport-https,ca-certificates,openssl,dialog,curl,dbus,less,locales"
+      ROOTFS_INCLUDE="ubuntu-keyring,apt-transport-https,apt-utils,ca-certificates,openssl,dialog,curl,dbus,less,locales"
       ROOTFS_EXCLUDE=""
       ROOTFS_COMPONENTS="main,contrib,non-free"
       if [ "$ROOTFS_CODENAME" = "lucid" ]; then 
@@ -205,9 +200,9 @@ UmountChroot() {
 
 # Directories
 [[ -z $ROOTFS_CWD    ]] && ROOTFS_CWD=$(pwd)
-[[ -z $ROOTFS_OUTDIR ]] && ROOTFS_OUTDIR="$ROOTFS_CWD"
+[[ -z $ROOTFS_OUTDIR ]] && ROOTFS_OUTDIR="$ROOTFS_CWD/build"
 [[ -z $ROOTFS_DATDIR ]] && ROOTFS_DATDIR="$ROOTFS_CWD/mydata"
-[[ -z $ROOTFS_TMPDIR ]] && ROOTFS_TMPDIR="$ROOTFS_CWD/rootfs"
+[[ -z $ROOTFS_TMPDIR ]] && ROOTFS_TMPDIR="$ROOTFS_CWD/temp"
 
 # Config File
 CONFIG_FILE=$ROOTFS_CWD/build.cfg
@@ -232,7 +227,8 @@ if [ -z $ROOTFS_DISTRO ] || [ "$param_init" = "true" ]; then
   # Default Settings
   ROOTFS_LANG="en_US.UTF-8"
   ROOTFS_HOSTNAME="${ROOTFS_DISTRO}-imx"
-  ROOTFS_PASSWD=
+  ROOTFS_PASSWD="root"
+  ROOTFS_ETHDEV="eth0"
 
   # Save Config
   echo "PROJECT=ROOTFS"                          > $CONFIG_FILE
@@ -249,7 +245,8 @@ if [ -z $ROOTFS_DISTRO ] || [ "$param_init" = "true" ]; then
   echo "# Board Specific"                       >> $CONFIG_FILE
   echo "ROOTFS_BOARD=${ROOTFS_BOARD}"           >> $CONFIG_FILE
   echo "ROOTFS_DUART=${ROOTFS_DUART}"           >> $CONFIG_FILE
-  echo "ROOTFS_SDCRD=${ROOTFS_SDCRD}"           >> $CONFIG_FILE
+  echo "ROOTFS_SDCARD=${ROOTFS_SDCARD}"         >> $CONFIG_FILE
+  echo "ROOTFS_ETHDEV=${ROOTFS_ETHDEV}"         >> $CONFIG_FILE
   echo "# root password (if empty... disabled)" >> $CONFIG_FILE
   echo "ROOTFS_PASSWD=${ROOTFS_PASSWD}"         >> $CONFIG_FILE
   echo "ROOTFS_LANG=${ROOTFS_LANG}"             >> $CONFIG_FILE
@@ -378,19 +375,18 @@ chroot $ROOTFS_TMPDIR apt-get -qq autoremove
 chroot $ROOTFS_TMPDIR apt-get -qq clean
 
 echo "==> Creating user: ${ROOTFS_DISTRO} with password: ${ROOTFS_DISTRO}"
-chroot $ROOTFS_TMPDIR adduser --disabled-password --gecos '' ${ROOTFS_DISTRO}
-chroot $ROOTFS_TMPDIR usermod -aG adm,sudo,plugdev ${ROOTFS_DISTRO}
-#chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_DISTRO}\n${ROOTFS_DISTRO}" | (passwd $ROOTFS_DISTRO)
-PASSWD_HASH=$(python -c "import crypt; print crypt.crypt(\"${ROOTFS_DISTRO}\", '\$6\$saltsalt\$')")
-sed -ri s/${ROOTFS_DISTRO}:*:/${ROOTFS_DISTRO}:${PASSWD_HASH}:/ -i $ROOTFS_TMPDIR/etc/shadow
+PASSWD_SALT=$(cat /dev/urandom | tr -dc A-Za-z0-9/_- | head -c8)
+PASSWD_HASH=$(python -c "import crypt; print crypt.crypt(\"${ROOTFS_DISTRO}\", \"\$6\$${PASSWD_SALT}\$\")")
+chroot $ROOTFS_TMPDIR useradd -m -G adm,sudo,plugdev -s /bin/bash -p $PASSWD_HASH $ROOTFS_DISTRO
 
 echo "==> Setting root password"
 if [ -z $ROOTFS_PASSWD ]; then
+    # disable security (can login as root without password, use only for testing build)
     sed -ri s/root:x:/root::/ -i $ROOTFS_TMPDIR/etc/passwd
 else
-    #chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_PASSWD}\n${ROOTFS_PASSWD}" | (passwd root)
-    PASSWD_HASH=$(python -c "import crypt; print crypt.crypt(\"${ROOTFS_PASSWD}\", '\$6\$saltsalt\$')")
-    sed -ri s/root:*:/root:${PASSWD_HASH}:/ -i $ROOTFS_TMPDIR/etc/shadow
+    PASSWD_SALT=$(cat /dev/urandom | tr -dc A-Za-z0-9/_- | head -c8)
+    PASSWD_HASH=$(python -c "import crypt; print crypt.crypt(\"${ROOTFS_PASSWD}\", \"\$6\$${PASSWD_SALT}\$\")")
+    chroot $ROOTFS_TMPDIR usermod -p $PASSWD_HASH root
 fi
 
 echo "==> Configuring debug terminal"
@@ -414,9 +410,9 @@ fi
 
 echo "==> Configuring fstab"
 cat <<EOM > $ROOTFS_TMPDIR/etc/fstab
-proc                    /proc   proc    defaults          0       0
-/dev/${ROOTFS_SDCRD}p2  /       ext4    defaults,noatime  0       1
-/dev/${ROOTFS_SDCRD}p1  /boot   vfat    defaults          0       2
+proc                     /proc   proc    defaults          0       0
+/dev/${ROOTFS_SDCARD}p2  /       ext4    defaults,noatime  0       1
+/dev/${ROOTFS_SDCARD}p1  /boot   vfat    defaults          0       2
 EOM
 
 echo "==> Configuring hosts"
@@ -442,8 +438,8 @@ iface lo inet loopback
 
 # The primary network interface
 #allow-hotplug eth0
-auto eth0
-iface eth0 inet dhcp
+auto ${ROOTFS_ETHDEV}
+iface ${ROOTFS_ETHDEV} inet dhcp
 EOM
 
 # wait for finis all tasks
@@ -472,11 +468,9 @@ if [ -d $ROOTFS_DATDIR ]; then
   cp -rf $ROOTFS_DATDIR/* $ROOTFS_DATDIR 2>/dev/null
 fi
 
-echo
 echo "==> Compressing rootfs, please wait !!!"
-echo
-TAR="${ROOTFS_DISTRO}_${ROOTFS_CODENAME}_${ROOTFS_BOARD}_rootfs"
-tar -czvf ${TAR}.tar.gz --directory=$ROOTFS_TMPDIR --exclude='./proc/*' --exclude='./run/*' --exclude='./tmp/*' --exclude='./mnt/*' --exclude='./sys/*' .
+TAR="${ROOTFS_BOARD}_${ROOTFS_DISTRO}_${ROOTFS_CODENAME}_rootfs"
+tar -czf ${TAR}.tar.gz --directory=$ROOTFS_TMPDIR --exclude='./proc/*' --exclude='./run/*' --exclude='./tmp/*' --exclude='./mnt/*' --exclude='./sys/*' .
 md5sum ${TAR}.tar.gz > ${TAR}.md5
 if [ "$ROOTFS_OUTDIR" != "$(pwd)" ]; then
   [[ -d $ROOTFS_OUTDIR ]] || mkdir -p $ROOTFS_OUTDIR

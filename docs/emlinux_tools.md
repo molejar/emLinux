@@ -2,21 +2,21 @@
 
 This directory contain a collection of scripts for creating ARM based Linux OS Image 
 
-![ ](docs/images/emlinux_tools_bd_smal.png  "Embedded Linux Tools")
+![ ](images/emlinux_tools_bd_smal.png  "Embedded Linux Tools")
 
 
 ## Installation
 
-For installing the emLinux Tools into your PC run following commands in shell window:
+For installing the emLinux Tools into your PC run the following commands in shell window:
 
 ```bash
    $ git clone https://github.com/molejar/emLinux.git emLinux
-   $ cd emLinux/tools
+   $ cd emLinux
    $ sudo ./install
 ```
 
-In Debian based distributions you can jump this step and instal directly the package `emlinux-tools_1.x-x_all.deb` 
-from [vm/dpkg](../vm/dpkg) with command:
+In Debian based distributions you can jump previous step and install directly the package `emlinux-tools_1.x-x_all.deb`
+from [release](release) directory with command:
 
 ```bash
    $ dpkg -i emlinux-tools_1.x-x_all.deb
@@ -153,6 +153,12 @@ OPTIONS:
    -x          Use XDialog
    -v          Verbose
 ```
+
+## TODO
+
+- Add i.MX GPU support into generated rootfs
+- Add configuration wizard into build_toolchain script
+- Update build_barebox script
 
 ## Usefull Links
 

@@ -48,7 +48,8 @@ vconfig = YAML.load_file("#{host_project_dir}/default.conf")
 # Use optional user.conf and local.conf for configuration overrides.
 ['user.conf', 'local.conf', "#{linuxvm_config}"].each do |config_file|
   if File.exist?("#{host_config_dir}/#{config_file}")
-    vconfig.merge!(YAML.load_file("#{host_config_dir}/#{config_file}"))
+    cfg_data = YAML.load_file("#{host_config_dir}/#{config_file}")
+    if cfg_data then vconfig.merge!(cfg_data) end
   end
 end
 
@@ -302,7 +303,7 @@ Vagrant.configure(2) do |config|
     :tftpdir => "/srv/tftp",
     :username => vconfig['vm_username'],
     :userpass => vconfig['vm_userpass'],
-    :emlinux_tools_deb => "#{guest_project_dir}/dpkg/emlinux-tools_1.0-1_all.deb"
+    :emlinux_tools_deb => "#{guest_project_dir}/release/emlinux-tools_1.0-1_all.deb"
   }
 
   # Execute bootstrap script

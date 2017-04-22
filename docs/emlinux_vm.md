@@ -32,7 +32,13 @@ Run the following command to bring the Vagrant virtual machine box (VM-Box) up a
   $ vagrant up
 ```
 
-If you change any Vagrant settings (e.g. changing the memory in the VM-Box) you'll need to reload the box with the following command:
+Update the VM-Box source image if you get the message that new version have been founded.
+
+```bash
+  $ vagrant box update
+```
+
+If you change any VM-Box settings (e.g. changing the memory size in `default.conf` or `local.conf`) you'll need to reload the box with the following command:
 
 ```bash
   $ vagrant reload
@@ -64,6 +70,8 @@ To delete the VM-Box and the data it contains run the following command:
 
 > Use it with caution!. When you run `vagrant up` again your VM box will be completely fresh.
 
+The description of all Vagrant commands are located here: [https://www.vagrantup.com/docs/cli](https://www.vagrantup.com/docs/cli/)
+
 
 ## How to Customize VM-Box
 
@@ -73,7 +81,7 @@ The default configuration for VM is stored in `default.conf` file and is using t
 ## FAQ
 
 **Machine does't start if run `vagrant up`:**<br>
-*Sometine it takes longer time to start up the machine and vagrant finish with error. Just rerun the `vagrant up` command.*
+*Sometime it takes longer time to start up the machine and vagrant finish with error. Just rerun the `vagrant up` command.*
 <br>
 <br>
 **In Windows I'm not able connect to SAMBA share:**<br>

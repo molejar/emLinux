@@ -12,10 +12,10 @@ This repository contain a set of automazitation scripts for:
 
 Make Embedded Linux Development happy !
 
-## Based On
+## Usage
 
-* [tools](tools) - Automatization Tools for Embedded Linux Development
-* [vm](vm) - Virtual machine architect/builder
+* [Automatization Tools](docs/emlinux_tools.md)
+* [Virtual Machine Builder](docs/emlinux_vm.md) - Needed for PC with Windows OS
 
 
 
