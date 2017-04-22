@@ -16,8 +16,8 @@ You must have installed the following software in your host OS:
 
 ## How to Start
 
-Clone this repository into your local disk and navigate to `emLinux/vm` directory in a terminal.
-> In Windows I recommend use the Git BASH instead of CMD
+Clone `emLinux` repository into your local disk and navigate to it in a terminal.
+> In Windows OS I recommend use the Git BASH instead of CMD
 
 Install vagrant plugin for adding virtualbox guest support in Windows OS
 > Run it only first time after instaling Vagrant application
