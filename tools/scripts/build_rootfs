@@ -192,16 +192,13 @@ UmountChroot() {
     echo "==> Unmounting proc, sys and dev"
 
     if grep -qs "$ROOTFS_TMPDIR/dev/pts" $ROOTFS_TMPDIR/proc/mounts; then
-        echo "==> Unmounting /dev/pts in chroot"
         umount -lf $ROOTFS_TMPDIR/dev/pts
     fi
-
-    if grep -qs "$ROOTFS_TMPDIR/proc" $ROOTFS_TMPDIR/proc/mounts; then
-        umount -lf $ROOTFS_TMPDIR/proc
-    fi
-
     if grep -qs "$ROOTFS_TMPDIR/sys" $ROOTFS_TMPDIR/proc/mounts; then
         umount -lf $ROOTFS_TMPDIR/sys
+    fi
+    if grep -qs "$ROOTFS_TMPDIR/proc" $ROOTFS_TMPDIR/proc/mounts; then
+        umount -lf $ROOTFS_TMPDIR/proc
     fi
 }
 
@@ -383,16 +380,20 @@ chroot $ROOTFS_TMPDIR apt-get -qq clean
 echo "==> Creating user: ${ROOTFS_DISTRO} with password: ${ROOTFS_DISTRO}"
 chroot $ROOTFS_TMPDIR adduser --disabled-password --gecos '' ${ROOTFS_DISTRO}
 chroot $ROOTFS_TMPDIR usermod -aG adm,sudo,plugdev ${ROOTFS_DISTRO}
-chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_DISTRO}\n${ROOTFS_DISTRO}" | (passwd $ROOTFS_DISTRO)
+#chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_DISTRO}\n${ROOTFS_DISTRO}" | (passwd $ROOTFS_DISTRO)
+PASSWD_HASH=$(python -c "import crypt; print crypt.crypt(\"${ROOTFS_DISTRO}\", '\$6\$saltsalt\$')")
+sed -ri s/${ROOTFS_DISTRO}:*:/${ROOTFS_DISTRO}:${PASSWD_HASH}:/ -i $ROOTFS_TMPDIR/etc/shadow
 
-# set root password
+echo "==> Setting root password"
 if [ -z $ROOTFS_PASSWD ]; then
     sed -ri s/root:x:/root::/ -i $ROOTFS_TMPDIR/etc/passwd
 else
-    chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_PASSWD}\n${ROOTFS_PASSWD}" | (passwd root)
+    #chroot $ROOTFS_TMPDIR echo -e "${ROOTFS_PASSWD}\n${ROOTFS_PASSWD}" | (passwd root)
+    PASSWD_HASH=$(python -c "import crypt; print crypt.crypt(\"${ROOTFS_PASSWD}\", '\$6\$saltsalt\$')")
+    sed -ri s/root:*:/root:${PASSWD_HASH}:/ -i $ROOTFS_TMPDIR/etc/shadow
 fi
 
-# configure debug terminal
+echo "==> Configuring debug terminal"
 if [ -d "$ROOTFS_TMPDIR/etc/systemd/system/getty.target.wants" ]; then
   chroot $ROOTFS_TMPDIR ln -snf /lib/systemd/system/serial-getty@.service /etc/systemd/system/getty.target.wants/serial-getty@${ROOTFS_DUART}.service
 elif [ -f "$ROOTFS_TMPDIR/etc/inittab" ]; then
@@ -411,14 +412,14 @@ exec /sbin/getty -L 115200 ${ROOTFS_DUART}
 EOT
 fi
 
-# Set up fstab
+echo "==> Configuring fstab"
 cat <<EOM > $ROOTFS_TMPDIR/etc/fstab
 proc                    /proc   proc    defaults          0       0
 /dev/${ROOTFS_SDCRD}p2  /       ext4    defaults,noatime  0       1
 /dev/${ROOTFS_SDCRD}p1  /boot   vfat    defaults          0       2
 EOM
 
-# Set up hosts
+echo "==> Configuring hosts"
 echo "${ROOTFS_HOSTNAME}" > $ROOTFS_TMPDIR/etc/hostname
 cat <<EOM > $ROOTFS_TMPDIR/etc/hosts
 127.0.0.1       localhost
@@ -429,7 +430,7 @@ ff02::2         ip6-allrouters
 127.0.1.1       ${ROOTFS_DISTRO}
 EOM
 
-# Set up interfaces
+echo "==> Configuring interfaces"
 cat <<EOM > $ROOTFS_TMPDIR/etc/network/interfaces
 # interfaces(5) file used by ifup(8) and ifdown(8)
 # Include files from /etc/network/interfaces.d:
@@ -471,10 +472,10 @@ if [ -d $ROOTFS_DATDIR ]; then
   cp -rf $ROOTFS_DATDIR/* $ROOTFS_DATDIR 2>/dev/null
 fi
 
-echo 
-echo " Creating tarball, please wait !!!"
-echo 
-TAR="${ROOTFS_DISTRO}_${ROOTFS_CODENAME}_imx_rootfs"
+echo
+echo "==> Compressing rootfs, please wait !!!"
+echo
+TAR="${ROOTFS_DISTRO}_${ROOTFS_CODENAME}_${ROOTFS_BOARD}_rootfs"
 tar -czvf ${TAR}.tar.gz --directory=$ROOTFS_TMPDIR --exclude='./proc/*' --exclude='./run/*' --exclude='./tmp/*' --exclude='./mnt/*' --exclude='./sys/*' .
 md5sum ${TAR}.tar.gz > ${TAR}.md5
 if [ "$ROOTFS_OUTDIR" != "$(pwd)" ]; then

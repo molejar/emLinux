@@ -7,10 +7,10 @@ This directory contain a collection of scripts for creating ARM based Linux OS I
 
 ## Installation
 
-For installing the EmLinux Tools into your PC run following commands in shell window:
+For installing the emLinux Tools into your PC run following commands in shell window:
 
 ```bash
-   $ git clone https://github.com/molejar/emLinux.git EmLinux
+   $ git clone https://github.com/molejar/emLinux.git emLinux
    $ cd emLinux/tools
    $ sudo ./install
 ```

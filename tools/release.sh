@@ -3,7 +3,7 @@
 # Author: Martin Olejar
 #################################################################################
 
-sudo apt-get install build-essential fakeroot devscripts build-dep fdupes
+sudo apt-get install build-essential fakeroot devscripts debhelper fdupes
 
 dpkg-buildpackage -uc -us
 
