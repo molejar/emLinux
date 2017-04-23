@@ -63,7 +63,7 @@ if [ "$(id -u)" != "0" ]; then
    exit 1
 fi
 
-# Check if instaled required packages and install if doesn't
+# Check if installed required packages and install if doesn't
 check_package "qemu-user-static"
 check_package "binfmt-support"
 check_package "debootstrap"

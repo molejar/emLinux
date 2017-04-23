@@ -19,7 +19,7 @@ For installing the collection of automazitation scripts into your PC run the fol
 ```bash
    $ git clone https://github.com/molejar/emLinux.git emLinux
    $ cd emLinux
-   $ sudo ./install
+   $ sudo ./install.sh
 ```
 
 In Debian based distributions you can jump previous step and install directly the package `emlinux-tools_1.x-x_all.deb`
@@ -37,7 +37,7 @@ The following picture is visualizing the general usage of this automatization sc
 
 ![ ](docs/images/emlinux_tools_bd_small.png  "Embedded Linux Tools")
 
-Implemented commands:
+All implemented commands:
 
 * *build_toolchain* - Prepare toolchain for barebox, uboot and kernel building
 * *build_uboot* - Build U-Boot Bootloader from sources in git repo
