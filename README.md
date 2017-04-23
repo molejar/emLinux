@@ -33,9 +33,11 @@ If you are using Windows OS or non Debian based distribution, then you will need
 
 ## Usage
 
-The following picture is visualizing the general usage of this automatization scripts. As you can see from picture, every script is covering a specific role in image build process and is executable as standard shell command.
+The following picture is visualizing the general usage of this automatization scripts. As you can see from picture, every script is covering a specific role in image build process and is accessible as standard shell command.
 
 ![ ](docs/images/emlinux_tools_bd_small.png  "Embedded Linux Tools")
+
+Implemented commands:
 
 * *build_toolchain* - Prepare toolchain for barebox, uboot and kernel building
 * *build_uboot* - Build U-Boot Bootloader from sources in git repo

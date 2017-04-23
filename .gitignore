@@ -2,13 +2,14 @@
 ###############################
 .vagrant
 *.log
+local.conf
+
 
 # Provisioning specific files #
 ###############################
 share
 
-# Other
+# Other                       #
 ###############################
 .idea
-
-
+temp

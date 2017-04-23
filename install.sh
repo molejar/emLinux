@@ -3,7 +3,8 @@
 # Author: Martin Olejar
 #################################################################################
 
-. scripts/functions
+ROOT_DIR=$(dirname $(realpath $0))
+. $ROOT_DIR/scripts/functions
 
 usage() {
 cat << EOF
@@ -14,14 +15,13 @@ emlinux installer for i.MX (NXP MPU)
 OPTIONS:
    -h/--help   Show this message
    -u          Uninstall
-   -x          Use XDialog
-   -v          Verbose
+   -q          Quiet, no output messages
 
 EOF
 }
 
 # Get the params from arguments provided
-argparse "?|h|help u|uninstall x|xdialog v|verbose" $*
+argparse "?|h|help u|uninstall q|quiet" $*
 if [ $? -eq 0 ]; then
   echo
   echo "Use: $0 -h/--help for usage description"
@@ -40,41 +40,44 @@ if [ "$(id -u)" != "0" ]; then
    exit 1
 fi
 
-echo
-echo '***********************************************************'
-echo '*              Embedded Linux Tools Installer             *'
-echo '***********************************************************'
-echo
-echo " For printing all usable options use \"install -h\""
-echo
+[[ "$param_quiet" != "true" ]] && {
+  echo
+  echo '***********************************************************'
+  echo '*              Embedded Linux Tools Installer             *'
+  echo '***********************************************************'
+  echo
+  echo " For printing all usable options use \"install -h\""
+  echo
+}
 
-CWD="$(pwd)"
+CWD=$(pwd)
 BIN_PATH="/usr/bin"
 
-PACKAGES=$(ls ${CWD}/scripts | grep "build")
+PACKAGES=$(ls ${ROOT_DIR}/scripts | grep "build")
 
 cd $BIN_PATH
 
 if [ -z $param_uninstall ]; then
   for PKG in $PACKAGES; do
     if [ -z "$(which $PKG)" ]; then
-      echo " Install: $PKG"
-      [[ -x ${CWD}/scripts/${PKG} ]] || chmod a+x ${CWD}/scripts/${PKG}
-      ln -f -s ${CWD}/scripts/${PKG} ${PKG}
+      [[ "$param_quiet" != "true" ]] && echo " Install: $PKG"
+      [[ -x ${ROOT_DIR}/scripts/${PKG} ]] || chmod a+x ${ROOT_DIR}/scripts/${PKG}
+      ln -f -s ${ROOT_DIR}/scripts/${PKG} ${PKG}
     fi
   done
 else
   for PKG in $PACKAGES; do
     if [ -e $PKG ]; then
-      echo " Uninstall: $PKG"
+      [[ "$param_quiet" != "true" ]] && echo " Uninstall: $PKG"
       rm -f ${PKG}
     fi
   done
 fi
 
+[[ "$param_quiet" != "true" ]] && {
+  echo
+  echo " DONE"
+  echo
+}
+
 cd $CWD
-
-echo
-echo " DONE"
-echo
-

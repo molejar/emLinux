@@ -271,7 +271,19 @@ Vagrant.configure(2) do |config|
       echo '    read only = no'                        >> /etc/samba/smb.conf
       echo '    create mask = 0777'                    >> /etc/samba/smb.conf
       echo '    directory mask = 0777'                 >> /etc/samba/smb.conf
-      sudo systemctl restart smbd.service nmbd.service 
+      sudo systemctl restart smbd.service nmbd.service
+      echo '>>> Install emlinux-tools dependencies'
+      sudo apt-get install -y git parted tree lzop gzip zip bc binfmt-support debootstrap
+      echo '>>> Install emlinux-tools'
+      sudo dpkg -i %{emlinux_tools_deb}
+    END
+  else
+    $init_script += <<-'END'
+      echo '>>> Install emlinux-tools dependencies'
+      sudo apt-get install -y git parted tree lzop gzip zip bc binfmt-support debootstrap
+      echo '>>> Install emlinux-tools'
+      sudo chmod a+x %{emlinux_tools_install}
+      sudo %{emlinux_tools_install} -q
     END
   end
 
@@ -291,9 +303,6 @@ Vagrant.configure(2) do |config|
     sudo mkdir -p %{nfsdir}
     sudo /etc/init.d/nfs-kernel-server restart
     sudo systemctl restart nfs-kernel-server.service
-    echo '>>> Install emlinux-tools'
-    sudo apt-get install -y git parted tree lzop gzip zip bc binfmt-support debootstrap
-    sudo dpkg -i %{emlinux_tools_deb}
     sudo chown -R %{username}:%{username} /home/%{username}
   END
 
@@ -303,7 +312,8 @@ Vagrant.configure(2) do |config|
     :tftpdir => "/srv/tftp",
     :username => vconfig['vm_username'],
     :userpass => vconfig['vm_userpass'],
-    :emlinux_tools_deb => "#{guest_project_dir}/release/emlinux-tools_1.0-1_all.deb"
+    :emlinux_tools_deb => "#{guest_project_dir}/release/emlinux-tools_1.0-1_all.deb",
+    :emlinux_tools_install => "#{guest_project_dir}/install.sh"
   }
 
   # Execute bootstrap script
