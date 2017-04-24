@@ -17,7 +17,7 @@ CORES=$(grep -c ^processor /proc/cpuinfo)
 
 usage() {
 cat << EOF
-Usage: $0 [options]
+Usage: $0 [options] [params]
 
 SDCard image creator script for i.MX (NXP MPU)
   - use "uboot"  dir for bootloader image and env
@@ -28,11 +28,13 @@ OPTIONS:
    -h/--help   Show this message
    -i/--init   Create required dirs and exit
    -e/--extr   Extract SD Card Image <path to image>
-   -s/--sfatp  Set FAT16 partition size in MB (default: 20)
-   -f/--sfree  Set RootFS free space in MB (default: 200)
    -c          Comress SD image: zip or gzip (default: zip)
    -x          Use XDialog
    -v          Verbose
+
+PARAMS:
+   -s/--sfatp  Set FAT16 partition size in MB (default: 20)
+   -f/--sfree  Set RootFS free space in MB (default: 200)
 
 EOF
 }

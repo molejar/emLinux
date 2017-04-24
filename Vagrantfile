@@ -312,7 +312,7 @@ Vagrant.configure(2) do |config|
     :tftpdir => "/srv/tftp",
     :username => vconfig['vm_username'],
     :userpass => vconfig['vm_userpass'],
-    :emlinux_tools_deb => "#{guest_project_dir}/release/emlinux-tools_1.0-1_all.deb",
+    :emlinux_tools_deb => "#{guest_project_dir}/dpkg/emlinux-tools_1.0-1_all.deb",
     :emlinux_tools_install => "#{guest_project_dir}/install.sh"
   }
 

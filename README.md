@@ -23,29 +23,34 @@ For installing the collection of automazitation scripts into your PC run the fol
 ```
 
 In Debian based distributions you can jump previous step and install directly the package `emlinux-tools_1.x-x_all.deb`
-from [release](release) directory with a command:
+from [dpkg](dpkg) directory with a command:
 
 ```bash
    $ dpkg -i emlinux-tools_1.x-x_all.deb
 ```
 
-If you are using Windows OS or non Debian based distribution, then you will need use Virtual Machine. I have created a Vagrant script which will do all the work for you. Please, continue here: [Virtual Machine Builder](docs/emlinux_vm.md)
+If you are using Windows OS or non Debian based distribution, then you will need to use Virtual Machine. I have created a Vagrant script which will do all the work for you. Please, continue here: [Virtual Machine Builder](docs/emlinux_vm.md)
 
 ## Usage
 
-The following picture is visualizing the general usage of this automatization scripts. As you can see from picture, every script is covering a specific role in image build process and is accessible as standard shell command.
+The following picture is visualizing general usage of this automatization scripts. As you can see from picture, every script is covering a specific role in image build process and is accessible as standard shell command.
 
-![ ](docs/images/emlinux_tools_bd_small.png  "Embedded Linux Tools")
+<p align="center">
+  <img src="docs/images/emlinux_tools_bd.png" alt="Embedded Linux Tools"/>
+</p>
 
-All implemented commands:
+***All implemented commands:***
 
-* *build_toolchain* - Prepare toolchain for barebox, uboot and kernel building
-* *build_uboot* - Build U-Boot Bootloader from sources in git repo
-* *build_kernel* - Build Kernel from sources in git repo
-* *build_rootfs* - Build munimal RootFS based on Debian packages
-* *build_image* - Create SD Card image from uboot, kernel and rootfs
+* **build_toolchain** - *Prepare toolchain for barebox, uboot and kernel building*
+* **build_barebox** - *Build BareBox Bootloader (replacement of U-Boot)*
+* **build_uboot** - *Build U-Boot Bootloader from sources in git repo*
+* **build_kernel** - *Build Kernel from sources in git repo*
+* **build_rootfs** - *Build munimal RootFS based on Debian packages*
+* **build_image** - *Create SD Card image from uboot, kernel and rootfs*
 
-### Build Toolchain
+---
+
+#### Build Toolchain:
 
 ```bash
 Usage: ./build_toolchain [options]
@@ -58,7 +63,9 @@ OPTIONS:
    -v          Verbose
 ```
 
-### Build U-Boot Bootloader
+<br />
+
+#### Build U-Boot Bootloader:
 
 ```bash
 Usage: ./build_uboot [options] [params]
@@ -80,7 +87,9 @@ PARAMS:
    -t/--btool  Set path for external toolchain (optional)
 ```
 
-### Build Linux Kernel
+<br />
+
+#### Build Linux Kernel:
 
 ```bash
 Usage: ./build_kernel [options] [params]
@@ -106,25 +115,33 @@ PARAMS:
    -a/--laddr  Set target LOADADDR as "0x........" (optional)
 ```
 
-### Build RootFS from Debian or Ubuntu packages
+<br />
+
+#### Build RootFS from Debian or Ubuntu packages:
 
 ```bash
-Usage: ./build_rootfs [options]
+Usage: ./build_rootfs [options] [params]
 
 RootFS creator script for i.MX (NXP MPU)
   - use "mydata" dir for aditional files
 
 OPTIONS:
    -h/--help   Show this message
-   -i          Create initial config
+   -i          Create initial config and exit
+   -n          New build, ignore initial config
    -x          Use XDialog
    -v          Verbose
+
+PARAMS:
+   -o/--out    Extract rootfs into specified directory
 ```
 
-### Build SD Card Image
+<br />
+
+#### Build SD Card Image:
 
 ```bash
-Usage: ./build_image [options]
+Usage: ./build_image [options] [params]
 
 SDCard image creator script for i.MX (NXP MPU)
   - use "uboot"  dir for bootloader image and env
@@ -135,14 +152,20 @@ OPTIONS:
    -h/--help   Show this message
    -i/--init   Create required dirs and exit
    -e/--extr   Extract SD Card Image <path to image>
-   -s/--sfatp  Set FAT16 partition size in MB (default: 20)
-   -f/--sfree  Set RootFS free space in MB (default: 200)
    -c          Comress SD image: zip or gzip (default: zip)
    -x          Use XDialog
    -v          Verbose
+
+PARAMS:
+   -s/--sfatp  Set FAT16 partition size in MB (default: 20)
+   -f/--sfree  Set RootFS free space in MB (default: 200)
 ```
 
-![ ](docs/images/sd_image_small.png  "SD Cart Image")
+<p align="center">
+  <img src="docs/images/sd_image.png" alt="2GB SD-Cart Image Format"/>
+  <br />
+  <strong>Example of 2GB SD-Card Image Format</strong>
+</p>
 
 ## TODO
 

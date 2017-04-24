@@ -17,7 +17,7 @@ CORES=$(grep -c ^processor /proc/cpuinfo)
 
 usage() {
 cat << EOF
-Usage: $0 [options]
+Usage: $0 [options] [params]
 
 RootFS creator script for i.MX (NXP MPU)
   - use "mydata" dir for additional files
