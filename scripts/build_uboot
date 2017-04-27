@@ -109,13 +109,15 @@ if [ ! -z ${param_btool} ]; then
 fi
 # search for internal toolchain if not explicitly specified
 if [ -z $CROSS_COMPILER ]; then
-  echo "[INFO ] Searching Toolchain ... please wait !"
+  echo "[INFO ] Searching Compiler ... please wait !"
   find_toolchain "/opt /usr/bin /usr/sbin $HOME"
-  if [ -z $RET_VALUE ]; then
+  CROSS_COMPILER=$RET_VALUE
+  if [ -z $CROSS_COMPILER ]; then
     eprint "Toolchain not installed, please run \"build_toolchain\" first"
     exit 1
+  else
+    echo "[INFO ] Used Compiler: ${CROSS_COMPILER}gcc"
   fi
-  CROSS_COMPILER=$RET_VALUE
 fi
 
 # Default U-Boot repos

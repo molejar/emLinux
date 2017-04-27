@@ -6,10 +6,13 @@
 ROOT_DIR=$(dirname $(realpath $0))
 . $ROOT_DIR/scripts/functions
 
+
+EMLINUX_VERSION="0.1.0"
+
 data_for_dpkg() {
   # debian/changelog file
   cat << EOF > ${1}/changelog
-emlinux-tools (1.0-1) UNRELEASED; urgency=medium
+emlinux-tools ($EMLINUX_VERSION) UNRELEASED; urgency=medium
 
   * Initial release. (Closes: #XXXXXX)
 
@@ -18,19 +21,23 @@ EOF
 
   # debian/control file
   cat << EOF > ${1}/control
-Source: emlinux-tools 
-Section: utils
-Priority: optional
+Source: emlinux-tools
 Maintainer: Martin Olejar
-Standards-Version: 0.1.0
+Section: Utils
+Priority: optional
+Standards-Version: $EMLINUX_VERSION
 Build-Depends:
+Homepage: https://github.com/molejar/emLinux
 
 Package: emlinux-tools
-Section: utils
-Priority: optional
 Architecture: all
+Section: Utils
+Priority: optional
 Essential: no
-Description: Automatization tools for embedded Linux development
+Depends: build-essential, u-boot-tools, qemu-user-static, binfmt-support, debootstrap, binutils, parted, git, lzop, gzip, zip
+Description: Automatization tools for embedded Linux development.
+  This package include a collection of useful commands for compiling toolchain, u-boot, kernel, rootfs and generating bootable image.
+  More details you can found here: https://github.com/molejar/emLinux
 EOF
 
   # debian/copyright file
@@ -87,7 +94,7 @@ EOF
   echo "9" > ${1}/compat
 
   # debian/install file
-  echo "scripts/* usr/bin" > ${1}/install
+  echo "scripts/* /sbin" > ${1}/install
 }
 
 usage() {
@@ -143,26 +150,27 @@ if [ "$param_release" = "true"  ]; then
   echo " Building Debian package, please wait"
   echo
 
-  [ -d $ROOT_DIR/dpkg/tmp ] && rm -rf $ROOT_DIR/dpkg/tmp
-  mkdir -p $ROOT_DIR/dpkg/tmp/pkg/debian
+  TMP_DIR=$(mktemp -d)
 
-  data_for_dpkg "$ROOT_DIR/dpkg/tmp/pkg/debian"
-  cp -Rf $ROOT_DIR/scripts $ROOT_DIR/dpkg/tmp/pkg
-  cd $ROOT_DIR/dpkg/tmp/pkg
+  mkdir -p $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}/debian
+
+  data_for_dpkg "$TMP_DIR/emlinux-tools-${EMLINUX_VERSION}/debian"
+  cp -Rf $ROOT_DIR/scripts $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}
+  cd $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}
+  chmod a+x scripts/build*
 
   export LC_ALL=C
   dpkg-buildpackage -uc -us
-  cp $ROOT_DIR/dpkg/tmp/*.deb $ROOT_DIR/dpkg
-
+  cp $TMP_DIR/*.deb $ROOT_DIR/dpkg
   cd $CWD
-  rm -rf $ROOT_DIR/dpkg/tmp
+  rm -rf $TMPDIR
 
   echo
   echo " Output: $ROOT_DIR/dpkg/$(ls $ROOT_DIR/dpkg)"
   echo
 else
   PACKAGES=$(ls $ROOT_DIR/scripts | grep "build")
-  cd /usr/bin
+  cd /sbin
 
   if [ -z $param_uninstall ]; then
     for PKG in $PACKAGES; do

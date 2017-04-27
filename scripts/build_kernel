@@ -113,19 +113,20 @@ if [ ! -z ${param_btool} ]; then
 fi
 # search for internal toolchain if not explicitly specified
 if [ -z $CROSS_COMPILER ]; then
-  echo "[INFO ] Searching Toolchain ... please wait !"
+  echo "[INFO ] Searching Compiler ... please wait !"
   find_toolchain "/opt /usr/bin /usr/sbin $HOME"
-  if [ -z $RET_VALUE ]; then
+  CROSS_COMPILER=$RET_VALUE
+  if [ -z $CROSS_COMPILER ]; then
     eprint "Toolchain not installed, please run \"build_toolchain\" first"
     exit 1
+  else
+    echo "[INFO ] Used Compiler: ${CROSS_COMPILER}gcc"
   fi
-  CROSS_COMPILER=$RET_VALUE
 fi
 
 # Default Kernel repos  
 if [ -z $KERNEL_URLS ]; then           
   KERNEL_URLS=('http://sw-stash.freescale.net/scm/imx/linux-2.6-imx.git'
-               'git://git.freescale.com/imx/linux-2.6-imx.git'
                'git://git.freescale.com/imx/linux-imx.git'
                'https://github.com/Freescale/linux-fslc'
                'https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git')

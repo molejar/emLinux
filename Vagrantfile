@@ -131,7 +131,7 @@ Vagrant.configure(2) do |config|
   # Use Vagrant-provided SSH private keys (don't use any keys stored in ssh-agent, default: true).
   config.ssh.keys_only = true
   # Use agent forwarding over SSH connections (default: false).
-  config.ssh.forward_agent = false
+  config.ssh.forward_agent = true
   # Use X11 forwarding over SSH connections (default: false).
   config.ssh.forward_x11 = false
 
@@ -312,7 +312,7 @@ Vagrant.configure(2) do |config|
     :tftpdir => "/srv/tftp",
     :username => vconfig['vm_username'],
     :userpass => vconfig['vm_userpass'],
-    :emlinux_tools_deb => "#{guest_project_dir}/dpkg/emlinux-tools_1.0-1_all.deb",
+    :emlinux_tools_deb => "#{guest_project_dir}/dpkg/emlinux-tools*.deb",
     :emlinux_tools_install => "#{guest_project_dir}/install.sh"
   }
 

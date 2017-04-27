@@ -434,7 +434,7 @@ auto lo
 iface lo inet loopback
 
 # The primary network interface
-#allow-hotplug eth0
+allow-hotplug ${ROOTFS_ETHDEV}
 auto ${ROOTFS_ETHDEV}
 iface ${ROOTFS_ETHDEV} inet dhcp
 EOM
