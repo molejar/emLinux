@@ -54,7 +54,7 @@ fi
 
 echo
 echo '***********************************************************'
-echo '*                    U-Boot Compiler                      *'
+echo '*                     U-Boot Builder                      *'
 echo '***********************************************************'
 echo
 echo " For printing all usable options use \"build_uboot -h\""
@@ -109,7 +109,7 @@ if [ ! -z ${param_btool} ]; then
 fi
 # search for internal toolchain if not explicitly specified
 if [ -z $CROSS_COMPILER ]; then
-  echo "[INFO ] Searching Compiler ... please wait !"
+  echo "[INFO ] Searching Compiler, please wait !"
   find_toolchain "/opt /usr/bin /usr/sbin $HOME"
   CROSS_COMPILER=$RET_VALUE
   if [ -z $CROSS_COMPILER ]; then

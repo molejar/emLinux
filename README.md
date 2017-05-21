@@ -17,16 +17,16 @@ Make Embedded Linux Development happy !
 For installing the collection of automazitation scripts into your PC run the following commands in shell window:
 
 ```bash
-   $ git clone https://github.com/molejar/emLinux.git emLinux
+   $ git clone https://github.com/molejar/emLinux.git
    $ cd emLinux
    $ sudo ./install.sh
 ```
 
-In Debian based distributions you can jump previous step and install directly the package `emlinux-tools_1.x-x_all.deb`
+In Debian based distributions you can jump previous step and install directly the package `emlinux-tools_x.x.x_all.deb`
 from [dpkg](dpkg) directory with a command:
 
 ```bash
-   $ dpkg -i emlinux-tools_1.x-x_all.deb
+   $ dpkg -i emlinux-tools_x.x.x_all.deb
 ```
 
 If you are using Windows OS or non Debian based distribution, then you will need to use Virtual Machine. I have created a Vagrant script which will do all the work for you. Please, continue here: [Virtual Machine Builder](docs/emlinux_vm.md)
@@ -164,7 +164,7 @@ PARAMS:
 <p align="center">
   <img src="docs/images/sd_image.png" alt="2GB SD-Cart Image Format"/>
   <br />
-  <strong>Example of 2GB SD-Card Image Format</strong>
+  <strong>Example of SD-Card Image Format (2GB)</strong>
 </p>
 
 ## TODO

@@ -12,9 +12,9 @@ EMLINUX_VERSION="0.1.0"
 data_for_dpkg() {
   # debian/changelog file
   cat << EOF > ${1}/changelog
-emlinux-tools ($EMLINUX_VERSION) UNRELEASED; urgency=medium
+emlinux-tools ($EMLINUX_VERSION) unstable; urgency=medium
 
-  * Initial release. (Closes: #XXXXXX)
+  * Initial release.
 
  -- molejar <martin.olejar@gmail.com>  Sun, 06 Mar 2016 19:24:35 +0100
 EOF
@@ -34,7 +34,7 @@ Architecture: all
 Section: Utils
 Priority: optional
 Essential: no
-Depends: build-essential, u-boot-tools, qemu-user-static, binfmt-support, debootstrap, binutils, parted, git, lzop, gzip, zip
+Depends: build-essential, gcc-arm-linux-gnueabi, u-boot-tools, qemu-user-static, binfmt-support, debootstrap, binutils, parted, git, lzop, gzip, zip
 Description: Automatization tools for embedded Linux development.
   This package include a collection of useful commands for compiling toolchain, u-boot, kernel, rootfs and generating bootable image.
   More details you can found here: https://github.com/molejar/emLinux
@@ -95,6 +95,9 @@ EOF
 
   # debian/install file
   echo "scripts/* /sbin" > ${1}/install
+
+  # debian/source/format file
+  echo "3.0 (native)" > ${1}/source/format
 }
 
 usage() {
@@ -152,8 +155,7 @@ if [ "$param_release" = "true"  ]; then
 
   TMP_DIR=$(mktemp -d)
 
-  mkdir -p $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}/debian
-
+  mkdir -p $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}/debian/source
   data_for_dpkg "$TMP_DIR/emlinux-tools-${EMLINUX_VERSION}/debian"
   cp -Rf $ROOT_DIR/scripts $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}
   cd $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}
