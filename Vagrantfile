@@ -275,7 +275,9 @@ Vagrant.configure(2) do |config|
       echo '>>> Install emlinux-tools dependencies'
       sudo apt-get install -y git parted tree lzop gzip zip bc binfmt-support debootstrap
       echo '>>> Install emlinux-tools'
-      sudo dpkg -i %{emlinux_tools_deb}
+      sudo wget --quiet https://github.com/molejar/emLinux/releases/download/v%{emlinux_tools_release}/emlinux-tools_%{emlinux_tools_release}_all.deb
+      sudo dpkg -i emlinux-tools_%{emlinux_tools_release}_all.deb
+      sudo rm emlinux-tools_%{emlinux_tools_release}_all.deb
     END
   else
     $init_script += <<-'END'
@@ -312,8 +314,8 @@ Vagrant.configure(2) do |config|
     :tftpdir => "/srv/tftp",
     :username => vconfig['vm_username'],
     :userpass => vconfig['vm_userpass'],
-    :emlinux_tools_deb => "#{guest_project_dir}/dpkg/emlinux-tools*.deb",
-    :emlinux_tools_install => "#{guest_project_dir}/install.sh"
+    :emlinux_tools_install => "#{guest_project_dir}/install.sh",
+    :emlinux_tools_release => "0.1.0"
   }
 
   # Execute bootstrap script

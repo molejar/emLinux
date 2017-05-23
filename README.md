@@ -14,22 +14,14 @@ Make Embedded Linux Development happy !
 
 ## Installation
 
-For installing the collection of automazitation scripts into your PC run the following commands in shell window:
+In Debian based distributions just install the package `emlinux-tools_<version>_all.deb` from release section.
 
 ```bash
-   $ git clone https://github.com/molejar/emLinux.git
-   $ cd emLinux
-   $ sudo ./install.sh
+   $ wget --quiet https://github.com/molejar/emLinux/releases/download/v<version>/emlinux-tools_<version>_all.deb
+   $ sudo dpkg -i emlinux-tools_<version>_all.deb
 ```
 
-In Debian based distributions you can jump previous step and install directly the package `emlinux-tools_x.x.x_all.deb`
-from [dpkg](dpkg) directory with a command:
-
-```bash
-   $ dpkg -i emlinux-tools_x.x.x_all.deb
-```
-
-If you are using Windows OS or non Debian based distribution, then you will need to use Virtual Machine. I have created a Vagrant script which will do all the work for you. Please, continue here: [Virtual Machine Builder](docs/emlinux_vm.md)
+If you are using Windows OS or non Debian based distribution, then you will need to use Virtual Machine. I have created a Vagrant script which will do all the work for you. Download the `emlinux-vm_<version>.zip` from release section and extract it into your disk. Then continue here: [Virtual Machine Builder](https://github.com/molejar/emLinux/wiki/VM)
 
 ## Usage
 
@@ -39,7 +31,7 @@ The following picture is visualizing general usage of this automatization script
   <img src="docs/images/emlinux_tools_bd.png" alt="Embedded Linux Tools"/>
 </p>
 
-***All implemented commands:***
+***Implemented commands:***
 
 * **build_toolchain** - *Prepare toolchain for barebox, uboot and kernel building*
 * **build_barebox** - *Build BareBox Bootloader (replacement of U-Boot)*
@@ -48,124 +40,17 @@ The following picture is visualizing general usage of this automatization script
 * **build_rootfs** - *Build munimal RootFS based on Debian packages*
 * **build_image** - *Create SD Card image from uboot, kernel and rootfs*
 
----
+For more details go to [Wiki](https://github.com/molejar/emLinux/wiki).
 
-#### Build Toolchain:
+## Development
 
-```bash
-Usage: ./build_toolchain [options]
-
-Toolchain build script for i.MX (NXP MPU)
-
-OPTIONS:
-   -h/--help   Show this message
-   -x          Use XDialog
-   -v          Verbose
-```
-
-<br />
-
-#### Build U-Boot Bootloader:
+Clone this repository into your disk and install it with `install.sh` script.
 
 ```bash
-Usage: ./build_uboot [options] [params]
-
-U-Boot build script for i.MX (NXP MPU)
-   - use "mydata" dir for own data like patches, configs and sources
-
-OPTIONS:
-   -h/--help   Show this message
-   -u/--updt   Clean sources and update local branch
-   -c/--clean  Clean sources (remove all uncomited changes)
-   -p/--patch  Create patch from working sources
-   -m/--mcfg   Run menuconfig
-   -x          Use XDialog
-   -v          Verbose (print debug info)
-
-PARAMS:
-   -s/--surl   Set GitRepo URL for U-Boot SRC (optional)
-   -t/--btool  Set path for external toolchain (optional)
+   $ git clone https://github.com/molejar/emLinux.git
+   $ cd emLinux
+   $ sudo ./install.sh
 ```
-
-<br />
-
-#### Build Linux Kernel:
-
-```bash
-Usage: ./build_kernel [options] [params]
-
-Linux Kernel build script for i.MX (NXP MPU)
-   - use "mydata" dir for own patches, configs and sources
-
-OPTIONS:
-   -h/--help   Show this message
-   -u/--updt   Clear sources and update local branch
-   -c/--clean  Clean sources (remove all uncomited changes)
-   -p/--patch  Create patch from working sources
-   -z/--zip    Compress build data into zip archive
-   -m/--mcfg   Run menuconfig
-   -f          Include firmwares
-   -x          Use XDialog
-   -v          Verbose (print debug info)
-
-PARAMS:
-   -i/--img    Set Image Type (Image, uImage or zImage <default>)
-   -s/--surl   Set GitRepo URL for Linux SRC (optional)
-   -t/--btool  Set path for external toolchain (optional)
-   -a/--laddr  Set target LOADADDR as "0x........" (optional)
-```
-
-<br />
-
-#### Build RootFS from Debian or Ubuntu packages:
-
-```bash
-Usage: ./build_rootfs [options] [params]
-
-RootFS creator script for i.MX (NXP MPU)
-  - use "mydata" dir for aditional files
-
-OPTIONS:
-   -h/--help   Show this message
-   -i          Create initial config and exit
-   -n          New build, ignore initial config
-   -x          Use XDialog
-   -v          Verbose
-
-PARAMS:
-   -o/--out    Extract rootfs into specified directory
-```
-
-<br />
-
-#### Build SD Card Image:
-
-```bash
-Usage: ./build_image [options] [params]
-
-SDCard image creator script for i.MX (NXP MPU)
-  - use "uboot"  dir for bootloader image and env
-  - use "kernel" dir for kernel image and *.dtb files
-  - use "rootfs" dir for rootfs pkgs or rawdata
-
-OPTIONS:
-   -h/--help   Show this message
-   -i/--init   Create required dirs and exit
-   -e/--extr   Extract SD Card Image <path to image>
-   -c          Comress SD image: zip or gzip (default: zip)
-   -x          Use XDialog
-   -v          Verbose
-
-PARAMS:
-   -s/--sfatp  Set FAT16 partition size in MB (default: 20)
-   -f/--sfree  Set RootFS free space in MB (default: 200)
-```
-
-<p align="center">
-  <img src="docs/images/sd_image.png" alt="2GB SD-Cart Image Format"/>
-  <br />
-  <strong>Example of SD-Card Image Format (2GB)</strong>
-</p>
 
 ## TODO
 
