@@ -14,14 +14,14 @@ Make Embedded Linux Development happy !
 
 ## Installation
 
-In Debian based distributions just install the package `emlinux-tools_<version>_all.deb` from release section.
+In Debian based Linux distributions just install the package [emlinux-tools_x.x.x_all.deb](https://github.com/molejar/emLinux/releases) from release section.
 
 ```bash
-   $ wget --quiet https://github.com/molejar/emLinux/releases/download/v<version>/emlinux-tools_<version>_all.deb
-   $ sudo dpkg -i emlinux-tools_<version>_all.deb
+   $ wget --quiet https://github.com/molejar/emLinux/releases/download/v0.1.0/emlinux-tools_0.1.0_all.deb
+   $ sudo dpkg -i emlinux-tools_0.1.0_all.deb
 ```
 
-If you are using Windows OS or non Debian based distribution, then you will need to use Virtual Machine. I have created a Vagrant script which will do all the work for you. Download the `emlinux-vm_<version>.zip` from release section and extract it into your disk. Then continue here: [Virtual Machine Builder](https://github.com/molejar/emLinux/wiki/VM)
+In Windows OS you will need to use the Virtual Machine. I have created a Vagrant script which will do all the work for you. Just download the [emlinux-vm_x.x.x.zip](https://github.com/molejar/emLinux/releases) and extract it into your disk. Then continue reading here: [Virtual Machine Builder](https://github.com/molejar/emLinux/wiki/VM)
 
 ## Usage
 
@@ -31,7 +31,7 @@ The following picture is visualizing general usage of this automatization script
   <img src="docs/images/emlinux_tools_bd.png" alt="Embedded Linux Tools"/>
 </p>
 
-***Implemented commands:***
+***All Implemented commands:***
 
 * **build_toolchain** - *Prepare toolchain for barebox, uboot and kernel building*
 * **build_barebox** - *Build BareBox Bootloader (replacement of U-Boot)*
@@ -40,17 +40,24 @@ The following picture is visualizing general usage of this automatization script
 * **build_rootfs** - *Build munimal RootFS based on Debian packages*
 * **build_image** - *Create SD Card image from uboot, kernel and rootfs*
 
-For more details go to [Wiki](https://github.com/molejar/emLinux/wiki).
+With argument `-h` or `-?` you can print the command usage. Read [Wiki](https://github.com/molejar/emLinux/wiki) page for more details.
 
 ## Development
 
-Clone this repository into your disk and install it with `install.sh` script.
+Clone this repository into your local disk (running Linux OS).
 
 ```bash
    $ git clone https://github.com/molejar/emLinux.git
    $ cd emLinux
+```
+
+In Debian based Linux distributions install it with `install.sh` script.
+
+```bash
    $ sudo ./install.sh
 ```
+
+In other Linux distributions use [Virtual Machine Builder](https://github.com/molejar/emLinux/wiki/VM).
 
 ## TODO
 
