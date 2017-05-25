@@ -61,6 +61,9 @@ vconfig = walk(vconfig) do |value|
   value
 end
 
+# EmLinux Tools Version
+emlinux_version = vconfig['vm_emlinux']
+
 # Get Host Name and Machine Name
 hostname = vconfig['vm_hostname']
 machname = vconfig.include?('vm_machname') ? vconfig['vm_machname'] : hostname
@@ -315,14 +318,14 @@ Vagrant.configure(2) do |config|
     :username => vconfig['vm_username'],
     :userpass => vconfig['vm_userpass'],
     :emlinux_tools_install => "#{guest_project_dir}/install.sh",
-    :emlinux_tools_release => "0.1.0"
+    :emlinux_tools_release => "#{emlinux_version}"
   }
 
   # Execute bootstrap script
   if vconfig.include?('vm_bootstrap')
     script = ""
     vconfig['vm_bootstrap'].each { |cmd| script += "#{cmd}\n" }
-    script += 'echo ">>> VM Read, run: vagrant ssh"'
+    script += 'echo ">>> VM Ready, run: vagrant ssh"'
     config.vm.provision "shell", inline: script
   end
 end

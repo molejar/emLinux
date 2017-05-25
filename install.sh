@@ -153,6 +153,7 @@ if [ "$param_release" = "true"  ]; then
   echo " Building Debian package, please wait"
   echo
 
+  [[ -d $ROOT_DIR/release ]] || mkdir $ROOT_DIR/release
   TMP_DIR=$(mktemp -d)
 
   mkdir -p $TMP_DIR/emlinux-tools-${EMLINUX_VERSION}/debian/source
@@ -163,12 +164,19 @@ if [ "$param_release" = "true"  ]; then
 
   export LC_ALL=C
   dpkg-buildpackage -uc -us
-  cp $TMP_DIR/*.deb $ROOT_DIR/dpkg
-  cd $CWD
+  cp $TMP_DIR/*.deb $ROOT_DIR/release
+  cd $ROOT_DIR/release
   rm -rf $TMPDIR
 
+  mkdir emlinux-vm_${EMLINUX_VERSION}
+  cp $ROOT_DIR/Vagrantfile emlinux-vm_${EMLINUX_VERSION}
+  cp $ROOT_DIR/*.conf emlinux-vm_${EMLINUX_VERSION}
+  zip -r emlinux-vm_${EMLINUX_VERSION}.zip emlinux-vm_${EMLINUX_VERSION}
+  rm -rf emlinux-vm_${EMLINUX_VERSION}
+  cd $CWD
+
   echo
-  echo " Output: $ROOT_DIR/dpkg/$(ls $ROOT_DIR/dpkg)"
+  echo " Output: $ROOT_DIR/release"
   echo
 else
   PACKAGES=$(ls $ROOT_DIR/scripts | grep "build")
