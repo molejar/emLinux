@@ -295,8 +295,8 @@ find_toolchain() {
   local cnt=0
 
   for path in $@; do
-    GCCEXEC=($(find $path -type f -executable -name 'arm*linux-*gcc' 2>/dev/null))
-    GCCEXEC+=($(find $path -type l -executable -name 'arm*linux-*gcc' 2>/dev/null))
+    GCCEXEC=($(find $path -type f -executable -name 'arm-*-gcc' 2>/dev/null))
+    GCCEXEC+=($(find $path -type l -executable -name 'arm-*-gcc' 2>/dev/null))
     for n in $GCCEXEC; do
       $n -v &>/dev/null || continue
       cnt=$((cnt+1))

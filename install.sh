@@ -34,7 +34,7 @@ Architecture: all
 Section: Utils
 Priority: optional
 Essential: no
-Depends: build-essential, gcc-arm-linux-gnueabi, u-boot-tools, qemu-user-static, binfmt-support, debootstrap, binutils, parted, git, lzop, gzip, zip
+Depends: build-essential, u-boot-tools, qemu-user-static, binfmt-support, debootstrap, binutils, parted, git, lzop, gzip, zip
 Description: Automatization tools for embedded Linux development.
   This package include a collection of useful commands for compiling toolchain, u-boot, kernel, rootfs and generating bootable image.
   More details you can found here: https://github.com/molejar/emLinux

@@ -81,10 +81,15 @@ Vagrant.configure(2) do |config|
   if vconfig.include?('vagrant_url')
     config.vm.box_url = vconfig['vagrant_url']
   end
-
-  # The default machine name
+ 
+  # Set machine name
   config.vm.define machname
 
+  # Set machine disk size
+  if vconfig.include?('vm_disksize')
+    config.disksize.size = "#{vconfig['vm_disksize']}GB"
+  end
+  
   # *********************************************************************************************
   # Network options.
   # *********************************************************************************************

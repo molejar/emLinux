@@ -64,71 +64,141 @@ else
 fi
 
 CWD=$(pwd)
+LINAROBIN_URL="https://releases.linaro.org/components/toolchain/binaries"
+CROOSTOOL_URL='https://github.com/crosstool-ng/crosstool-ng'
 
-if [ -e "$CWD/toolchain" ]; then
-  . $CWD/toolchain
-fi
+install_linaro_toolchain() {
+  local TOOLCHAIN_TYPE=$1
+  local TOOLCHAIN_VERS=($(curl -s ${LINAROBIN_URL}/ | grep "components/toolchain/binaries/[0-9*]" | awk -v FS="components/toolchain/binaries/|/" '{print $3}'))
+  
+  list_dialog 'Select Toolchain Version' "${TOOLCHAIN_VERS[@]}"
+  local TOOLCHAIN_VER=$RET_VALUE
 
-if [ ! -z $COMPILER ]; then
-  ${COMPILER}gcc -v &>/dev/null
-  if [ $? -eq 0 ]; then
-    msg_dialog 'info' "Compiler already configured"
-    exit 0
-  fi
-fi
+  local TOOLCHAIN_PKG="gcc-linaro-*-x86_64_${TOOLCHAIN_TYPE}.tar.xz"
+  local TOOLCHAIN_URL="${LINAROBIN_URL}/${TOOLCHAIN_VER}/${TOOLCHAIN_TYPE}/${TOOLCHAIN_PKG}"
 
-msg_dialog 'question' "Check for internal toolchain"
-if [ "$RET_VALUE" = "YES"  ]; then 
-  echo "[INFO ] Searching Toolchain ... please wait !"
-  find_toolchain "/opt /usr/bin /usr/sbin $HOME"
-  COMPILER=$RET_VALUE
-fi
+  list_dialog 'Select install dir' "/opt $HOME/x-tools $CWD"
+  local INSTALL_DIR=$RET_VALUE
 
-
-# Linaro ARM v6 and v7 Linux GCC toolchian
-URLS=('https://releases.linaro.org/components/toolchain/binaries/5.1-2015.08/arm-linux-gnueabihf/gcc-linaro-5.1-2015.08-x86_64_arm-linux-gnueabihf.tar.xz')      
-
-# crosstool-ng sources
-SRC_URL='https://github.com/crosstool-ng/crosstool-ng'
-
-if [ -z $COMPILER ]; then
-  if [ ${#URLS[@]} -gt 1 ]; then
-    list_dialog 'Select link' "${URLS[@]}"
-    PKG_URL=$RET_VALUE
+  local TEMP_DIR=$(mktemp -d)
+  download "${TOOLCHAIN_URL}" "$TEMP_DIR/$TOOLCHAIN_PKG"
+  mkdir "$TEMP_DIR/unpacked"
+  extract "$TEMP_DIR/$TOOLCHAIN_PKG" "$TEMP_DIR/unpacked"
+  local TOOLCHAIN_DIR=$(ls $TEMP_DIR/unpacked)
+  if [ "$INSTALL_DIR" = '/opt' ]; then
+    sudo mv "$TEMP_DIR/unpacked/$TOOLCHAIN_DIR" "$INSTALL_DIR"
   else
-    PKG_URL=${URLS[0]}
+    [[ -d $INSTALL_DIR ]] || mkdir -p $INSTALL_DIR
+    mv "$TEMP_DIR/unpacked/$TOOLCHAIN_DIR" "$INSTALL_DIR"
   fi
-
-  INS_DIRS="/opt $CWD/bin"
-  list_dialog 'Select install dir' "$INS_DIRS"
-  INS_DIR=$RET_VALUE
-
-  PKG_TAR=${PKG_URL##*/}
-  TMP_DIR=$(mktemp -d)
-  download "${PKG_URL}" "$TMP_DIR/$PKG_TAR"
-  mkdir "$TMP_DIR/unpacked"
-  extract  "$TMP_DIR/$PKG_TAR" "$TMP_DIR/unpacked"
-  TRG_DIR=$(ls $TMP_DIR/unpacked)
-  if [ "$INS_DIR" = '/opt' ]; then
-    sudo mv "$TMP_DIR/unpacked/$TRG_DIR" "$INS_DIR"
+  rm -rfd "$TEMP_DIR"
+ 
+  COMPILER="$INSTALL_DIR/$TOOLCHAIN_DIR/bin/${TOOLCHAIN_TYPE}-gcc"
+}
+  
+install_crosstool_ng() {
+  if [ -d 'crosstool/.git' ]; then
+    cd crosstool
+    git pull || {
+      eprint ' Crosstool-NG Pull Error'
+      exit 1
+    }
   else
-    [[ -d $INS_DIR ]] || mkdir -p $INS_DIR
-    mv "$TMP_DIR/unpacked/$TRG_DIR" "$INS_DIR"
+    git clone $CROOSTOOL_URL crosstool || {
+      eprint ' Crosstool-NG Clone Error'
+      exit 1
+    }
+    cd crosstool
   fi
-  rm -rfd "$TMP_DIR"
 
-  find_toolchain "$INS_DIR/$TRG_DIR"
-  COMPILER=$RET_VALUE
-fi
+  ./bootstrap && ./configure --enable-local && make -j${CORES} || {
+    eprint ' Crosstool-NG Initialization Error'
+    cd $CWD
+    exit 1
+  }
 
-echo "COMPILER=\"$COMPILER\"" > $CWD/toolchain
+  local CONF_TARGET=($(ls samples | grep 'arm-unknown'))
+  list_dialog 'Select Configuration' "${CONF_TARGET[@]}"
+  CONF_TARGET=$RET_VALUE
+
+  ./ct-ng $CONF_TARGET || {
+    eprint ' Crosstool-NG Config Error'
+    cd $CWD
+    exit 1
+  }
+
+  msg_dialog 'question' "Run Menuconfig"
+  [[ "$RET_VALUE" = "YES"  ]] && ./ct-ng menuconfig
+
+  list_dialog 'Select install dir' "/opt $HOME/x-tools $CWD"
+  local INSTALL_DIR=${RET_VALUE}
+  local TEMP_DIR=$(pwd)/out
+
+  # update install dir
+  sed -i 's,CT_PREFIX_DIR=.*,CT_PREFIX_DIR='"${TEMP_DIR}"'/${CT_TARGET},' .config
+
+  ./ct-ng build || {
+    eprint ' Crosstool-NG Build Error'
+    cd $CWD
+    exit 1
+  }
+
+  cd $CWD
+
+  local TOOLCHAIN_DIR=$(ls ${TEMP_DIR})
+
+  if [ $INSTALL_DIR = "/opt" ]; then
+    sudo mv "$TEMP_DIR/$TOOLCHAIN_DIR" "$INSTALL_DIR"
+  else
+    mv "$TEMP_DIR/$TOOLCHAIN_DIR" "$INSTALL_DIR"
+  fi
+
+  msg_dialog 'question' "Delete Crosstool-NG SRC"
+  [[ "$RET_VALUE" = "YES"  ]] && rm -rfd crosstool
+
+  COMPILER="$INSTALL_DIR/$TOOLCHAIN_DIR/bin/${TOOLCHAIN_DIR}-gcc"
+}
+
+
+list_dialog 'Select Toolchain Compilation' "debian linaro crosstool-ng"
+case $RET_VALUE in
+  debian) 
+    list_dialog 'Select Toolchain Type' "gcc-arm-none-eabi gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf"
+    sudo apt-get install $RET_VALUE || {
+      eprint ' $RET_VALUE install Error'
+      exit 1
+    }
+    COMPILER="/usr/bin/${RET_VALUE:4}-gcc"
+    ;;
+
+  linaro)
+    list_dialog 'Select Toolchain Type' "gcc-arm-eabi gcc-arm-linux-gnueabi gcc-arm-linux-gnueabihf"
+    install_linaro_toolchain "${RET_VALUE:4}" 
+    ;;
+
+  crosstool-ng)
+    echo "Install Dependencies"
+    check_package 'gcc'
+    check_package 'gperf'
+    check_package 'bison'
+    check_package 'flex'
+    check_package 'texinfo'
+    check_package 'help2man'
+    check_package 'make'
+    check_package 'libncurses5-dev'
+    check_package 'python-dev'
+    install_crosstool_ng
+    ;;
+
+  *) eprint "Unsupported Toolchain: $RET_VALUE"; exit 1 ;;
+esac
 
 echo
 echo " ---------------------------------------------------------------"
 echo "       Congratulation, Toolchain install was successful"
 echo " ---------------------------------------------------------------"
 echo " Path: ${COMPILER%/*}"
-echo " Exec: ${COMPILER##*/}gcc"
-echo " Version: $(${COMPILER}gcc -dumpversion)"
+echo " Exec: ${COMPILER##*/}"
+echo " Version: $(${COMPILER} -dumpversion)"
 echo " ---------------------------------------------------------------"
 echo
