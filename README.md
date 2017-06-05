@@ -62,7 +62,6 @@ In other Linux distributions use [Virtual Machine Builder](https://github.com/mo
 ## TODO
 
 - Add i.MX GPU support into generated rootfs
-- Add configuration wizard into build_toolchain script
 - Update build_barebox script
 
 ## Usefull Links

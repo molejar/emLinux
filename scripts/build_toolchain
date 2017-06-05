@@ -146,12 +146,7 @@ install_crosstool_ng() {
   cd $CWD
 
   local TOOLCHAIN_DIR=$(ls ${TEMP_DIR})
-
-  if [ $INSTALL_DIR = "/opt" ]; then
-    sudo mv "$TEMP_DIR/$TOOLCHAIN_DIR" "$INSTALL_DIR"
-  else
-    mv "$TEMP_DIR/$TOOLCHAIN_DIR" "$INSTALL_DIR"
-  fi
+  sudo mv "$TEMP_DIR/$TOOLCHAIN_DIR" "$INSTALL_DIR"
 
   msg_dialog 'question' "Delete Crosstool-NG SRC"
   [[ "$RET_VALUE" = "YES"  ]] && rm -rfd crosstool
