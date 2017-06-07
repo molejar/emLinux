@@ -7,7 +7,7 @@ ROOT_DIR=$(dirname $(realpath $0))
 . $ROOT_DIR/scripts/functions
 
 
-EMLINUX_VERSION="0.1.0"
+EMLINUX_VERSION="0.1.1"
 
 data_for_dpkg() {
   # debian/changelog file

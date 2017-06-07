@@ -17,7 +17,7 @@ Building a bootable SD-Card image with Debian based embedded Linux OS for [i.MX]
 In Debian based Linux distributions just install the package [emlinux-tools_x.x.x_all.deb](https://github.com/molejar/emLinux/releases) from release section.
 
 ```bash
-   $ wget --quiet https://github.com/molejar/emLinux/releases/download/v0.1.0/emlinux-tools_0.1.0_all.deb
+   $ wget --quiet https://github.com/molejar/emLinux/releases/download/0.1.1/emlinux-tools_0.1.1_all.deb
    $ sudo dpkg -i emlinux-tools_0.1.0_all.deb
 ```
 

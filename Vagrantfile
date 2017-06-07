@@ -283,7 +283,7 @@ Vagrant.configure(2) do |config|
       echo '>>> Install emlinux-tools dependencies'
       sudo apt-get install -y git parted tree lzop gzip zip bc binfmt-support debootstrap
       echo '>>> Install emlinux-tools'
-      sudo wget --quiet https://github.com/molejar/emLinux/releases/download/v%{emlinux_tools_release}/emlinux-tools_%{emlinux_tools_release}_all.deb
+      sudo wget --quiet https://github.com/molejar/emLinux/releases/download/%{emlinux_tools_release}/emlinux-tools_%{emlinux_tools_release}_all.deb
       sudo dpkg -i emlinux-tools_%{emlinux_tools_release}_all.deb
       sudo rm emlinux-tools_%{emlinux_tools_release}_all.deb
     END
