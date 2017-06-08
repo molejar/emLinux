@@ -20,7 +20,7 @@ In Debian based Linux distributions just install the package [emlinux-tools_x.x.
    $ wget --quiet https://github.com/molejar/emLinux/releases/download/x.x.x/emlinux-tools_x.x.x_all.deb
    $ sudo dpkg -i emlinux-tools_x.x.x_all.deb
 ```
->Replace `x.x.x` vith the version number of last release !
+>Replace `x.x.x` with the version number of last release !
 
 In Windows OS you will need to use the Virtual Machine. I have created a Vagrant script which will do all the work for you. Just download the [emlinux-vm_x.x.x.zip](https://github.com/molejar/emLinux/releases) and extract it into your disk. Then continue reading here: [Virtual Machine Builder](https://github.com/molejar/emLinux/wiki/VM)
 
