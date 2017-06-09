@@ -26,7 +26,7 @@ BareBox build script for i.MX (NXP MPU)
 OPTIONS:
    -h/--help   Show this message
    -u/--updt   Update working branch from remote branch
-   -c/--clean  Clean sources (remove all uncomited changes)
+   -c/--clean  Clean sources (remove all uncommitted changes)
    -p/--patch  Create patch from working sources
    -m/--mcfg   Run menuconfig
    -x          Use XDialog
@@ -249,7 +249,7 @@ unset LDFLAGS
 
 # compile barebox
 make -j ${MAKEJOBS} ARCH=arm CROSS_COMPILE=$COMPILER all || {
-  eprint ' BareBox Compolation Error'
+  eprint ' BareBox Compilation Error'
   cd $CWD
   exit 1
 }
@@ -284,7 +284,7 @@ fi
 
 echo
 echo " ---------------------------------------------------------------"
-echo "          Congratulation, BareBox build was successful"
+echo "          Congratulations, BareBox build was successful"
 echo " ---------------------------------------------------------------"
 echo " Created files are stored in:"
 echo " $OUT_DIR/i${BNAME}"

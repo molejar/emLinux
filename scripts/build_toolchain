@@ -190,7 +190,7 @@ esac
 
 echo
 echo " ---------------------------------------------------------------"
-echo "       Congratulation, Toolchain install was successful"
+echo "       Congratulations, Toolchain was successfully installed"
 echo " ---------------------------------------------------------------"
 echo " Path: ${COMPILER%/*}"
 echo " Exec: ${COMPILER##*/}"
