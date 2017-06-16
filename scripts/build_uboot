@@ -25,7 +25,7 @@ U-Boot build script for i.MX (NXP MPU)
 OPTIONS:
    -h/--help   Show this message
    -u/--updt   Clean sources and update local branch
-   -c/--clean  Clean sources (remove all uncomited changes)
+   -c/--clean  Clean sources (remove all uncommitted changes)
    -p/--patch  Create patch from working sources
    -m/--mcfg   Run menuconfig
    -x          Use XDialog
@@ -401,7 +401,7 @@ fi
 # compile uboot
 unset LDFLAGS
 make -j${CORES} O="$UBOOT_TMPDIR" ARCH=arm CROSS_COMPILE=$CROSS_COMPILER all || {
-  eprint ' U-Boot Compolation Error'
+  eprint ' U-Boot Compilation Error'
   cd $UBOOT_CWD
   exit 1
 }
@@ -458,7 +458,7 @@ echo "UBOOT_BNAME=${UBOOT_BNAME}"       >> $CONFIG_FILE
 
 echo
 echo " ---------------------------------------------------------------"
-echo "        Congratulation, U-Boot build was successful"
+echo "        Congratulations, U-Boot build was successful"
 echo " ---------------------------------------------------------------"
 echo " Created files are stored in:"
 echo " $UBOOT_OUTDIR/i${UBOOT_BNAME}"

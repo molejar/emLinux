@@ -25,7 +25,7 @@ Linux Kernel build script for i.MX (NXP MPU)
 OPTIONS:
    -h/--help   Show this message
    -u/--updt   Clear sources and update local branch
-   -c/--clean  Clean sources (remove all uncomited changes)
+   -c/--clean  Clean sources (remove all uncommitted changes)
    -p/--patch  Create patch from working sources
    -z/--zip    Compress build data into zip archive 
    -m/--mcfg   Run menuconfig
@@ -533,7 +533,7 @@ echo "KERNEL_IMAGE=${KERNEL_IMAGE}"     >> $CONFIG_FILE
 
 echo
 echo " ---------------------------------------------------------------"
-echo "         Congratulation, Kernel build was successful"
+echo "         Congratulations, Kernel build was successful"
 echo " ---------------------------------------------------------------"
 echo " Created files are stored in:"
 echo " $KERNEL_OUTDIR/${KERNEL_BNAME}"

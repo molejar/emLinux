@@ -1,6 +1,6 @@
 # Enablement for Embedded Linux Development
 
-This repository contain a set of automazitation scripts for:
+This repository contains a set of automatization scripts for:
 
 * generating virtual machine with Linux OS (debian or ubuntu)
 * compiling `toolchain`, `u-boot` and `kernel`
@@ -9,7 +9,7 @@ This repository contain a set of automazitation scripts for:
 
 ## Motivation
 
-Building a bootable SD-Card image with Debian based embedded Linux OS for [i.MX](http://www.nxp.com/products/microcontrollers-and-processors/arm-processors/i.mx-applications-processors:IMX_HOME) platform is too complex task. This project is trying to decrease it complexity and make the process much easier and user friendly.
+Building a bootable SD-Card image with Debian based embedded Linux OS for [i.MX](http://www.nxp.com/products/microcontrollers-and-processors/arm-processors/i.mx-applications-processors:IMX_HOME) platform is too complex task. This project is trying to decrease its complexity and make the process much easier and user friendly.
 
 
 ## Installation
@@ -26,7 +26,7 @@ In Windows OS you will need to use the Virtual Machine. I have created a Vagrant
 
 ## Usage
 
-The following picture is visualizing general usage of this automatization scripts. As you can see from picture, every script is covering a specific role in image build process and is accessible as standard shell command.
+The following picture describes general usage of this automatization scripts. As you can see from picture, every script covers a specific role in image build process and is accessible as standard shell command.
 
 <p align="center">
   <img src="doc/images/emlinux_tools_bd.png" alt="Embedded Linux Tools"/>

@@ -501,7 +501,7 @@ rm -rf $ROOTFS_TMPDIR
 
 echo
 echo " ---------------------------------------------------------------"
-echo "         Congratulation, RootFS build was successful"
+echo "         Congratulations, RootFS build was successful"
 echo " ---------------------------------------------------------------"
 echo " ${ROOTFS_OUTDIR}/${TAR}.tar.gz"
 echo " ---------------------------------------------------------------"

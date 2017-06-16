@@ -218,7 +218,7 @@ if [ ! -z $param_extr ]; then
 
     echo
     echo "------------------------------------------------------------"
-    echo "    Congratulation, SD Card image successfully extracted"
+    echo "    Congratulations, SD Card image successfully extracted"
     echo "------------------------------------------------------------"
     echo "    Outputs are in uboot, kernel and rootfs directories"
     echo "------------------------------------------------------------"
@@ -541,7 +541,7 @@ fi
 
 echo
 echo "------------------------------------------------------------"
-echo "     Congratulation, SD Card image successfully created"
+echo "     Congratulations, SD Card image successfully created"
 echo "------------------------------------------------------------"
 echo " Name: ${IMAGE_NAME}${IMGEXT} | Size: ${IMAGE_SIZE} MB | Free: ${IFREE_SIZE} MB"
 echo "------------------------------------------------------------"
