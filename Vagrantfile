@@ -87,6 +87,13 @@ Vagrant.configure(2) do |config|
 
   # Set machine disk size
   if vconfig.include?('vm_disksize')
+    unless Vagrant.has_plugin?('vagrant-disksize')
+        puts "'vagrant-disksize' plugin is required. Install it by running:"
+        puts " vagrant plugin install vagrant-disksize"
+        puts
+        exit
+    end
+
     config.disksize.size = "#{vconfig['vm_disksize']}GB"
   end
   
