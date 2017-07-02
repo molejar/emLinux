@@ -60,6 +60,11 @@ In Debian based Linux distributions install it with `install.sh` script.
 
 In other Linux distributions use [Virtual Machine Builder](https://github.com/molejar/emLinux/wiki/VM).
 
+```bash
+   $ vagrant up
+   $ ...
+```
+
 ## TODO
 
 - Add i.MX GPU support into generated rootfs

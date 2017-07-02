@@ -6,7 +6,7 @@
 ROOT_DIR=$(dirname $(realpath $0))
 . $ROOT_DIR/scripts/functions
 
-
+INSTALL_DIR=/usr/bin
 EMLINUX_VERSION="0.1.1"
 
 data_for_dpkg() {
@@ -94,7 +94,7 @@ EOF
   echo "9" > ${1}/compat
 
   # debian/install file
-  echo "scripts/* /sbin" > ${1}/install
+  echo "scripts/* ${INSTALL_DIR}" > ${1}/install
 
   # debian/source/format file
   echo "3.0 (native)" > ${1}/source/format
@@ -180,7 +180,7 @@ if [ "$param_release" = "true"  ]; then
   echo
 else
   PACKAGES=$(ls $ROOT_DIR/scripts | grep "build")
-  cd /sbin
+  cd ${INSTALL_DIR}
 
   if [ -z $param_uninstall ]; then
     for PKG in $PACKAGES; do
