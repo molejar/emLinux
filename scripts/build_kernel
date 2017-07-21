@@ -477,6 +477,8 @@ if [ "$param_fware" = "true" ]; then
   make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_FW_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/lib/firmware" firmware_install
 fi
 
+make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_HDR_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/usr" headers_install
+
 # Create kernel_info.txt file
 echo "GitRepo: $KERNEL_SRCURL" > $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
 echo "Branch:  $KERNEL_BRANCH" >> $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info
