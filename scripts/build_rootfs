@@ -155,10 +155,10 @@ SelectDistro() {
 
     ubuntu)
       ROOTFS_MIRROR="http://ports.ubuntu.com/"
-      ROOTFS_VARIANT="minbase" 
+      ROOTFS_VARIANT="" 
       ROOTFS_INCLUDE="ubuntu-keyring,apt-transport-https,apt-utils,ca-certificates,openssl,dialog,curl,dbus,less,locales"
       ROOTFS_EXCLUDE=""
-      ROOTFS_COMPONENTS="main,contrib,non-free"
+      ROOTFS_COMPONENTS="main,universe,multiverse"
       if [ "$ROOTFS_CODENAME" = "lucid" ]; then 
           ROOTFS_ARCH="armel"
           ROOTFS_INCLUDE="openssh-server,debconf-utils,apt,openssl,dialog,curl,dbus,less,locales"
@@ -319,13 +319,13 @@ chroot $ROOTFS_TMPDIR locale-gen
 echo "==> Updating $ROOTFS_TMPDIR/etc/apt/sources.list"
 if [ "$ROOTFS_DISTRO" = "ubuntu" ]; then
   cat <<EOT > $ROOTFS_TMPDIR/etc/apt/sources.list
-deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME} main contrib non-free
-deb ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-updates main contrib non-free
-deb http://security.debian.org/ ${ROOTFS_CODENAME}/updates main contrib non-free
+deb ${ROOTFS_MIRROR}/ubuntu-ports/ ${ROOTFS_CODENAME} main universe multiverse
+deb ${ROOTFS_MIRROR}/ubuntu-ports/ ${ROOTFS_CODENAME}-updates main universe multiverse
+deb ${ROOTFS_MIRROR}/ubuntu-ports/ ${ROOTFS_CODENAME}-security main universe multiverse
 # sources
-#deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME} main contrib non-free
-#deb-src ${ROOTFS_MIRROR} ${ROOTFS_CODENAME}-updates main contrib non-free
-#deb-src http://security.debian.org/ ${ROOTFS_CODENAME}/updates main contrib non-free
+#deb-src ${ROOTFS_MIRROR}/ubuntu-ports/ ${ROOTFS_CODENAME} main universe multiverse
+#deb-src ${ROOTFS_MIRROR}/ubuntu-ports/ ${ROOTFS_CODENAME}-updates main universe multiverse
+#deb-src ${ROOTFS_MIRROR}/ubuntu-ports/ ${ROOTFS_CODENAME}-security main universe multiverse
 EOT
 else
   cat <<EOT > $ROOTFS_TMPDIR/etc/apt/sources.list
@@ -358,7 +358,7 @@ VERSION_ID=
 CHECK_VERSION=$(. $ROOTFS_TMPDIR/etc/os-release && echo $VERSION_ID)
 
 echo "==> Installing additional packages"
-chroot $ROOTFS_TMPDIR apt-get -qq install ssh ntpdate
+chroot $ROOTFS_TMPDIR apt-get -qq install ssh ntpdate nano vim
 if [[ "$ROOTFS_DISTRO" = "debian" ]]; then
     if [[ "$CHECK_VERSION" -ge 9 ]] || [[ -z "$CHECK_VERSION" ]]; then
         chroot $ROOTFS_TMPDIR apt-get -qq install --no-install-recommends software-properties-common
@@ -456,6 +456,11 @@ UmountChroot
 [[ -f $ROOTFS_TMPDIR/etc/machine-id ]] && rm -f $ROOTFS_TMPDIR/etc/machine-id
 [[ -f $ROOTFS_TMPDIR/root/.bash_history ]] && rm -f $ROOTFS_TMPDIR/root/.bash_history
 rm -f $ROOTFS_TMPDIR/etc/*-
+
+if [ -f $ROOTFS_TMPDIR/run/resolvconf/resolv.conf ]; then
+    ln -s /run/resolvconf/resolv.conf $ROOTFS_TMPDIR/etc/resolv.conf
+fi
+
 
 if [ -z $ROOTFS_PASSWD ] && [ -f $ROOTFS_TMPDIR/etc/ssh/sshd_config ]; then
   echo "==> Disabling PasswordAuthentication"
