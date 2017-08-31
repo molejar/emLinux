@@ -52,9 +52,12 @@ Clone this repository into your local disk (running Linux OS).
    $ cd emLinux
 ```
 
-In Debian based Linux distributions install it with `install.sh` script.
+In Debian based Linux distributions install all dependencies and execute `install.sh` script.
 
 ```bash
+   $ sudo apt-get install build-essential, u-boot-tools, qemu-user-static, binfmt-support
+   $ sudo apt-get install debootstrap, binutils, parted, realpath, git, lzop, gzip, zip
+
    $ sudo ./install.sh
 ```
 

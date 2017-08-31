@@ -289,11 +289,23 @@ Vagrant.configure(2) do |config|
       sudo systemctl restart smbd.service nmbd.service
       echo '>>> Install emlinux-tools dependencies'
       sudo apt-get install -y git parted tree lzop gzip zip bc binfmt-support debootstrap
-      echo '>>> Install emlinux-tools'
-      sudo wget --quiet https://github.com/molejar/emLinux/releases/download/%{emlinux_tools_release}/emlinux-tools_%{emlinux_tools_release}_all.deb
-      sudo dpkg -i emlinux-tools_%{emlinux_tools_release}_all.deb
-      sudo rm emlinux-tools_%{emlinux_tools_release}_all.deb
     END
+
+    if emlinux_version == 'develop'
+      $init_script += <<-'END'
+        echo '>>> Install emlinux-tools into /opt/emLinux directory'
+        sudo git clone https://github.com/molejar/emLinux /opt/emLinux
+        sudo chmod a+x /opt/emLinux/install.sh
+        sudo /opt/emLinux/install.sh -q
+      END
+    else
+      $init_script += <<-'END'
+        echo '>>> Install emlinux-tools'
+        sudo wget --quiet https://github.com/molejar/emLinux/releases/download/%{emlinux_tools_release}/emlinux-tools_%{emlinux_tools_release}_all.deb
+        sudo dpkg -i emlinux-tools_%{emlinux_tools_release}_all.deb
+        sudo rm emlinux-tools_%{emlinux_tools_release}_all.deb
+      END
+    end
   else
     $init_script += <<-'END'
       echo '>>> Install emlinux-tools dependencies'
