@@ -124,7 +124,8 @@ fi
 if [ -z $UBOOT_URLS ]; then                
   URLS=('http://sw-stash.freescale.net/scm/imx/uboot-imx.git'
         'git://git.freescale.com/imx/uboot-imx.git'
-        'https://github.com/Freescale/u-boot-fslc.git')
+        'https://github.com/Freescale/u-boot-fslc.git'
+        'git://git.denx.de/u-boot.git')
 fi
 
 # Optional params
@@ -351,7 +352,7 @@ if [ ! -e $UBOOT_TMPDIR/.config ]; then
     if [ -z $MYCONFIG ]; then
       MYCONFIG="${UBOOT_BNAME}_defconfig"
       if [ ! -e ${UBOOT_SRCDIR}/configs/${MYCONFIG} ]; then
-        MYCONFIGS=($(ls ${UBOOT_SRCDIR}/configs | grep "^mx"))
+        MYCONFIGS=($(ls ${UBOOT_SRCDIR}/configs | grep -e "mx6" -e "mx7"))
         list_dialog 'UBoot Default Configs' "${MYCONFIGS[@]}"
         MYCONFIG=$RET_VALUE
       fi
