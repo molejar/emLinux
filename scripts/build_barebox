@@ -20,17 +20,16 @@ cat << EOF
 Usage: $0 [options] [params]
 
 BareBox build script for i.MX (NXP MPU)
-  - use "bpatch" dir for aplying new patches
-  - use "bconf" dir for aplying own "config"
+   - use "mydata" dir for own data like patches, configs and sources
 
 OPTIONS:
    -h/--help   Show this message
-   -u/--updt   Update working branch from remote branch
+   -u/--updt   Clean sources and update local branch
    -c/--clean  Clean sources (remove all uncommitted changes)
    -p/--patch  Create patch from working sources
    -m/--mcfg   Run menuconfig
    -x          Use XDialog
-   -v          Verbose
+   -v          Verbose (print debug info)
 
 PARAMS:
    -s/--surl   Set GitRepo URL for BareBox SRC (optional)
@@ -61,21 +60,39 @@ echo
 echo " For printing all usable options use \"build_barebox -h\""
 echo
 
-# Check if instaled required packages and install if doesn't
-check_package "build-essential"
-check_package "git"
-
-if [ "$param_xdialog" = "true" ]; then
-    check_package "zenity"
-    MENUCONFIG="xconfig"
-else
-    MENUCONFIG="menuconfig"
+# ----------------------------------------------------------------
+# Make sure you are not root
+# ----------------------------------------------------------------
+if [ "$(id -u)" = "0" ]; then
+   eprint "This script can not be run as root"
+   exit 1
 fi
 
-CWD=$(pwd)
+# Check if instaled required packages and install if doesn't
+check_package "build-essential"
+check_package "lzop"
+check_package "git"
+check_package "tree"
 
-if [ -e "$CWD/toolchain" ]; then
-  . $CWD/toolchain
+if [ "$param_xdialog" = "true" ]; then
+  check_package "zenity"
+  MENUCONFIG="xconfig"
+else
+  MENUCONFIG="menuconfig"
+fi
+
+BAREBOX_CWD=$(pwd)
+
+# Internal files
+CONFIG_FILE=$BAREBOX_CWD/build.cfg
+
+if [ -e $CONFIG_FILE ]; then
+  . $CONFIG_FILE
+
+  if [ -n $PROJECT -a "$PROJECT" != "BAREBOX" ]; then
+    eprint " You are in $PROJECT directory, use the correct dir !"
+    exit 1
+  fi
 fi
 
 # ----------------------------------------------------------------
@@ -87,155 +104,251 @@ if [ ! -z ${param_btool} ]; then
   if [ $? -ne 0 ]; then
     wprint " Compiler: ${param_btool} doesn't work,\n will be used internal !"
   else
-    COMPILER=${param_btool}
+    CROSS_COMPILER=${param_btool}
   fi
 fi
 # search for internal toolchain if not explicitly specified
-if [ -z $COMPILER ]; then
-  echo "[INFO ] Searching Toolchain ... please wait !"
+if [ -z $CROSS_COMPILER ]; then
+  echo "[INFO ] Searching Compiler, please wait !"
   find_toolchain "/opt /usr/bin /usr/sbin $HOME"
-  if [ -z $RET_VALUE ]; then
+  CROSS_COMPILER=$RET_VALUE
+  if [ -z $CROSS_COMPILER ]; then
     eprint "Toolchain not installed, please run \"build_toolchain\" first"
     exit 1
+  else
+    echo "[INFO ] Used Compiler: ${CROSS_COMPILER}gcc"
   fi
-  COMPILER=$RET_VALUE
 fi
 
-# Default BareBox repos             
-URLS=('git://git.pengutronix.de/git/barebox.git')
-
-
-# Working dirs
-[[ -z $OUT_DIR     ]] && OUT_DIR="$CWD/out"
-[[ -z $SRC_DIR     ]] && SRC_DIR="$CWD/src_barebox"
-[[ -z $STATE_DIR   ]] && STATE_DIR="$SRC_DIR/.state"
-[[ -z $PATCH_DIR   ]] && PATCH_DIR="$CWD/bpatch"
-[[ -z $CONF_DIR    ]] && DTS_DIR="$CWD/bconf"
+# Default U-Boot repos
+if [ -z $BAREBOX_URLS ]; then
+  URLS=('git://git.pengutronix.de/git/barebox.git')
+fi
 
 # Optional params
-[[ -z $param_surl  ]] || SRC_URL=$param_surl
+[[ -z $param_surl  ]] || BAREBOX_SRCURL=$param_surl
+
+# Set Working dirs locations
+[[ -z $BAREBOX_OUTDIR ]] && BAREBOX_OUTDIR="$BAREBOX_CWD/build"
+[[ -z $BAREBOX_SRCDIR ]] && BAREBOX_SRCDIR="$BAREBOX_CWD/source"
+[[ -z $BAREBOX_MYSDIR ]] && BAREBOX_MYSDIR="$BAREBOX_CWD/mydata/source"
+[[ -z $BAREBOX_MYPDIR ]] && BAREBOX_MYPDIR="$BAREBOX_CWD/mydata/patch"
+[[ -z $BAREBOX_MYCDIR ]] && BAREBOX_MYCDIR="$BAREBOX_CWD/mydata/config"
+[[ -z $BAREBOX_STADIR ]] && BAREBOX_STADIR="$BAREBOX_CWD/.state"
+[[ -z $BAREBOX_TMPDIR ]] && BAREBOX_TMPDIR="$BAREBOX_CWD/.cache"
+
+# Create Working dirs
+[[ -d $BAREBOX_OUTDIR ]] || mkdir -p $BAREBOX_OUTDIR
+[[ -d $BAREBOX_MYSDIR ]] || mkdir -p $BAREBOX_MYSDIR
+[[ -d $BAREBOX_MYPDIR ]] || mkdir -p $BAREBOX_MYPDIR
+[[ -d $BAREBOX_MYCDIR ]] || mkdir -p $BAREBOX_MYCDIR
+[[ -d $BAREBOX_STADIR ]] || mkdir -p $BAREBOX_STADIR
+[[ -d $BAREBOX_TMPDIR ]] || mkdir -p $BAREBOX_TMPDIR
 
 # Verbose outputs
-dprint "<< Toolchain >>"
+dprint "<< BAREBOX Toolchain >>"
 dprint "Path: ${COMPILER%/*}"
 dprint "Exec: ${COMPILER##*/}"
 dprint "Version: $(${COMPILER}gcc -dumpversion)"
+dprint "<< BAREBOX Directories >>"
+dprint "ROOT DIR: $BAREBOX_CWD"
+dprint "OUT  DIR: $BAREBOX_OUTDIR"
+dprint "SRC  DIR: $BAREBOX_SRCDIR"
+dprint "STAT DIR: $BAREBOX_STADIR"
 
-dprint "<< Directories >>"
-dprint "CWD: $CWD"
-dprint "OUT_DIR: $OUT_DIR"
-dprint "SRC_DIR: $SRC_DIR"
-dprint "STATE_DIR: $STATE_DIR"
-dprint "PATCH_DIR: $PATCH_DIR"
+if [ ! -e $CONFIG_FILE ]; then
+  echo "PROJECT=BAREBOX"                   > $CONFIG_FILE
+  echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+  rm -rf $BAREBOX_TMPDIR && mkdir $BAREBOX_TMPDIR
+  rm -rf $BAREBOX_STADIR/*
+fi
 
-echo "COMPILER=\"$COMPILER\"" > $CWD/toolchain
-
-if [ -e $STATE_DIR/src_cloned ]; then
-  cd $SRC_DIR
-
-  SRC_URL=$(cat $STATE_DIR/src_cloned)
-  BRANCH=$(git branch | grep "*" | sed 's/* //')
- 
-  if [ "$param_clean" = "true" ]; then
-    dprint "Clean source directory"
-    git clean -dfx &>/dev/null
-    git checkout . &>/dev/null
-    mkdir -p $STATE_DIR
-    echo $SRC_URL > $STATE_DIR/src_cloned
-    SRC_CLEAN="true"
-  fi
-
-  dprint "SRC_URL   = $SRC_URL"
-  dprint "SRC_BRNCH = $BRANCH"
-  
-  # update actual branch
-  if [ "$param_updt" = "true" ]; then
-    git pull &>/dev/null
-  fi
+if [ -e $BAREBOX_STADIR/cloned_repo ]; then
+  BAREBOX_SRCURL=$(cat $BAREBOX_STADIR/cloned_repo)
 else
-  if [ -z $SRC_URL ]; then
-    if [ ${#URLS[@]} -gt 1 ]; then
-      list_dialog 'Select source repository' "${URLS[@]}"
-      SRC_URL=$RET_VALUE
-    else
-      SRC_URL=${URLS[0]}
-      msg_dialog 'question' "Clone repo: ${SRC_URL}"
-      if [ "$RET_VALUE" = "NO"  ]; then 
-        exit 0
+  if [ -e $BAREBOX_SRCDIR/.git/config ]; then
+    cd $BAREBOX_SRCDIR
+    BAREBOX_SRCURL=$(git config --get remote.origin.url)
+  else
+    if [ -z $BAREBOX_SRCURL ]; then
+      if [ ${#URLS[@]} -gt 1 ]; then
+        list_dialog 'Select source repository' "${URLS[@]}"
+        BAREBOX_SRCURL=$RET_VALUE
+      else
+        BAREBOX_SRCURL=${URLS[0]}
+        msg_dialog 'question' "Clone repo: ${BAREBOX_SRCURL}"
+        [[ "$RET_VALUE" = "NO"  ]] && exit 0
       fi
     fi
-  fi
 
-  [[ -d $SRC_DIR ]] && rm -rf $SRC_DIR
-
-  # clone new repo
-  dprint "Clone GIT repo: $SRC_URL"
-  git clone $SRC_URL $SRC_DIR || {
-    eprint 'GIT Clone Error'
-    cd $CWD
-    exit 1
-  }
-
-  NEW_CLONE="true"
-  mkdir -p $STATE_DIR
-  echo $SRC_URL > $STATE_DIR/src_cloned
-  cd $SRC_DIR
-fi
-
-# select working branch
-if [ "$SRC_CLEAN" = "true" -o "$NEW_CLONE" = "true"  ]; then
-  BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
-  if [ ${#BRANCHES[@]} -eq 0 ]; then
-    eprint " No branches found in repo: ${SRC_URL}"
-    exit 1
-  fi
-
-  list_dialog 'Select branch' "${BRANCHES[@]}"
-  BRANCH=$RET_VALUE
-
-  git checkout $BRANCH || {
-    eprint 'Git Checkout Error'
-    cd $CWD
-    exit 1
-  }
-fi
-
-# apply patches from patch directory if exist
-if [ -d $PATCH_DIR ]; then    
-  for patch in $(ls $PATCH_DIR | sort); do
-    [[ -e "$STATE_DIR/aplied_patches/$patch" ]] && continue
-    patch -p1 < $PATCH_DIR/$patch || {
-      eprint " Patch $patch Error"
-      cd $CWD
+    # clone new repo
+    dprint "Clone GIT repo: $BAREBOX_SRCURL"
+    git clone $BAREBOX_SRCURL $BAREBOX_SRCDIR || {
+      eprint 'GIT Clone Error'
+      cd $BAREBOX_CWD
       exit 1
     }
-    [[ -d "$STATE_DIR/aplied_patches" ]] || mkdir -p $STATE_DIR/aplied_patches
-    touch $STATE_DIR/aplied_patches/$patch
-  done
+  fi
+  rm -rf $BAREBOX_STADIR/*
+  rm -rf $BAREBOX_TMPDIR && mkdir $BAREBOX_TMPDIR
+  echo $BAREBOX_SRCURL > $BAREBOX_STADIR/cloned_repo
+fi
+
+# Go into source dir
+if [ -d $BAREBOX_SRCDIR ]; then
+  cd $BAREBOX_SRCDIR
+else
+  eprint "Source directory doesnt exist !"
+  exit 1
+fi
+
+# update actual branch
+if [ "$param_updt" = "true" ]; then
+  git clean -dfx &>/dev/null
+  git checkout . &>/dev/null
+
+  rm -rf $BAREBOX_STADIR/*
+  rm -rf $BAREBOX_TMPDIR && mkdir $BAREBOX_TMPDIR
+  echo $BAREBOX_SRCURL > $BAREBOX_STADIR/cloned_repo
+
+  echo "PROJECT=BAREBOX"                   > $CONFIG_FILE
+  echo "CROSS_COMPILER=${CROSS_COMPILER}" >> $CONFIG_FILE
+  echo "BAREBOX_SRCURL=${BAREBOX_SRCURL}" >> $CONFIG_FILE
+
+  git pull &>/dev/null
+  
+  echo '***********************************************************'
+  echo "[INFO] SRC updates, run \"build_barebox\" !"
+  echo '***********************************************************'
+  cd $BAREBOX_CWD
+  exit 0
+fi
+
+if [ -e $BAREBOX_STADIR/cloned_branch ]; then
+  BAREBOX_BRANCH=$(cat $BAREBOX_STADIR/cloned_branch)
+  #BAREBOX_BRANCH=$(git branch | grep "*" | sed 's/* //')
+else
+  if [ -z $BAREBOX_BRANCH ]; then
+    # select list dialog type (branch, tag or all)
+    SELOPTION=("BRANCH" "TAG" "ALL")
+    list_dialog 'Select option for git checkout list' "${SELOPTION[@]}"
+
+    if [ "$RET_VALUE" = "BRANCH" ]; then
+      BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+      DIALOG_NAME='Branch'
+    elif [ "$RET_VALUE" = "TAG" ]; then
+      BRANCHES=($(git tag -l | grep "2017"))
+      DIALOG_NAME='Tag'
+    else
+      BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
+      BRANCHES+=($(git tag -l | grep "2017"))
+      DIALOG_NAME='Branch or Tag'
+    fi
+
+    if [ ${#BRANCHES[@]} -eq 0 ]; then
+      eprint " No ${DIALOG_NAME} found in repo: ${BAREBOX_SRCURL}"
+      exit 1
+    fi
+    
+    # select working branch
+    list_dialog "Select ${DIALOG_NAME}" "${BRANCHES[@]}"
+    BAREBOX_BRANCH=$RET_VALUE
+  fi
+
+  git checkout $BAREBOX_BRANCH || {
+    eprint 'Git Checkout Error'
+    cd $BAREBOX_CWD
+    exit 1
+  }
+
+  echo $BAREBOX_BRANCH > $BAREBOX_STADIR/cloned_branch
+fi
+
+
+if [ "$param_clean" = "true" ]; then
+  dprint "Clean source directory"
+  git clean -dfx &>/dev/null
+  git checkout . &>/dev/null
+  rm -rf $BAREBOX_TMPDIR && mkdir $BAREBOX_TMPDIR
+
+  echo '***********************************************************'
+  echo "[INFO] SRC cleaned, run \"build_barebox\" !"
+  echo '***********************************************************'
+  cd $BAREBOX_CWD
+  exit 0
+fi
+
+dprint "<< UBOOT Source >>"
+dprint "REPO   = $BAREBOX_SRCURL"
+dprint "BRANCH = $BAREBOX_BRANCH"
+
+PATCH_USED=0
+# apply patches from patch directory if exist
+for patch in $(ls $BAREBOX_MYPDIR | sort); do
+  [[ -e "$BAREBOX_STADIR/applied_patches/$patch" ]] && continue
+  echo
+  echo "[INFO] Apply patch: $patch"
+  patch -p1 < $BAREBOX_MYPDIR/$patch >> /dev/null || {
+    eprint " Patch $patch Error"
+    cd $BAREBOX_CWD
+    exit 1
+  }
+  [[ -d $BAREBOX_STADIR/applied_patches ]] || mkdir -p $BAREBOX_STADIR/applied_patches
+  touch $BAREBOX_STADIR/applied_patches/$patch
+  PATCH_USED=1
+done
+[[ $PATCH_USED -eq 1 ]] && echo
+
+# add my sorces into kernel sorces
+if [ "$(ls $BAREBOX_MYSDIR)" != "" ]; then
+  echo
+  echo "[INFO] Copy content of < mydata > into uboot source directory"
+  echo
+  cp -rf $BAREBOX_MYSDIR/* $BAREBOX_SRCDIR
+  tree $BAREBOX_MYSDIR > $BAREBOX_STADIR/changed_files
 fi
 
 # load default configs
-if [ ! -e $SRC_DIR/.config -o "$NEW_CLONE" = "true" -o "$SRC_CLEAN" = "true" ]; then
-  if [ -e "$CONF_DIR/config" ]; then
-    MYCONFIG="dconf/config"
-    cp -f $CONF_DIR/config .config
-  else    
-    MYCONFIG="imx_v7_defconfig"
-    make ARCH=arm $MYCONFIG || {
-      eprint " Load default config: $MYCONFIG Error"
-      cd $CWD
-      exit 1
-    }  
-  fi  
-  
-  msg_dialog 'question' "Run Configuration Wizard ?"
-fi
+if [ ! -e $BAREBOX_TMPDIR/.config ]; then
+  MYCONFIG=""
+  MYCONFIGS=($(ls $BAREBOX_MYCDIR))
+  if [[ ${#MYCONFIGS[@]} -ne 0 ]]; then
+    if [[ ${#MYCONFIGS[@]} -eq 1 ]]; then
+      MYCONFIG=${MYCONFIGS[0]}
+    else
+      list_dialog 'BareBox Configs' "${MYCONFIGS[@]}"
+      MYCONFIG=$RET_VALUE
+    fi
+    rm -rf $BAREBOX_TMPDIR/*
+    cp -f $BAREBOX_MYCDIR/$MYCONFIG $BAREBOX_TMPDIR/.config
+    echo $BAREBOX_MYCDIR/$MYCONFIG > $BAREBOX_STADIR/default_config
+    BAREBOX_CONFIG=$BAREBOX_MYCDIR/$MYCONFIG
+  fi
 
+  if [ -z $MYCONFIG ]; then
+    MYCONFIGS=($(ls ${BAREBOX_SRCDIR}/arch/arm/configs | grep "imx"))
+    list_dialog 'BareBox Default Configs' "${MYCONFIGS[@]}"
+    MYCONFIG=$RET_VALUE
+    make O="$BAREBOX_TMPDIR" ARCH=arm $MYCONFIG || {
+      eprint " Load default config: $MYCONFIG Error"
+      cd $BAREBOX_CWD
+      exit 1
+    }
+    echo ${BAREBOX_SRCDIR}/arch/arm/configs/$MYCONFIG > $BAREBOX_STADIR/default_config
+    BAREBOX_CONFIG=${BAREBOX_SRCDIR}/arch/arm/configs/${MYCONFIG}
+    echo
+    echo "[INFO] CONFIG = ${BAREBOX_CONFIG}"
+    echo
+  fi
+
+  param_mcfg="true"
+fi
+    
 # run menuconfig wizard
-if [ "$param_mcfg" = "true" -o "$RET_VALUE" = "YES" ]; then
-  make ARCH=arm $MENUCONFIG || {
+if [ "$param_mcfg" = "true" ]; then
+  make O="$BAREBOX_TMPDIR" ARCH=arm menuconfig || {
     eprint ' Menuconfig Error'
-    cd $CWD
+    cd $BAREBOX_CWD
     exit 1
   }
 
@@ -245,50 +358,71 @@ if [ "$param_mcfg" = "true" -o "$RET_VALUE" = "YES" ]; then
   fi
 fi
 
+# compile uboot
 unset LDFLAGS
-
-# compile barebox
-make -j ${MAKEJOBS} ARCH=arm CROSS_COMPILE=$COMPILER all || {
+make -j${CORES} O="$BAREBOX_TMPDIR" ARCH=arm CROSS_COMPILE=$CROSS_COMPILER all || {
   eprint ' BareBox Compilation Error'
-  cd $CWD
+  cd $BAREBOX_CWD
   exit 1
 }
 
-BNAME='barebox_imx6'
-[ -d "$OUT_DIR/${BNAME}" ] && rm -rf "$OUT_DIR/${BNAME}"
-mkdir -p $OUT_DIR/${BNAME}/images
+[ -d "$BAREBOX_OUTDIR" ] && rm -rf "$BAREBOX_OUTDIR"
+mkdir -p $BAREBOX_OUTDIR/img
+mkdir -p $BAREBOX_OUTDIR/dtb
 
 # Copy images into out directory
-for i in $(ls $SRC_DIR/images/*.img); do
-  cp $i $OUT_DIR/${BNAME}/images
-done
-cp $SRC_DIR/.config $OUT_DIR/${BNAME}/barebox_config
+cp $BAREBOX_TMPDIR/images/*.imx* $BAREBOX_OUTDIR/img
+cp $BAREBOX_TMPDIR/arch/arm/dts/*.dtb $BAREBOX_OUTDIR/dtb
+cp $BAREBOX_TMPDIR/.config $BAREBOX_OUTDIR/imx.config
 
-# Create barebox_info.txt file
-echo "Repo url: $SRC_URL" > $OUT_DIR/${BNAME}/barebox_info.txt
-echo "Branch:   $BRANCH" >> $OUT_DIR/${BNAME}/barebox_info.txt
-if [ -d $STATE_DIR/aplied_patches ]; then
-  echo "Applied patches:" >> $OUT_DIR/${BNAME}/barebox_info.txt
-  for i in $(ls $STATE_DIR/aplied_patches); do
-    echo " - $i" >> $OUT_DIR/${BNAME}/barebox_info.txt
+# Create info.txt file
+echo "Repo url: $BAREBOX_SRCURL"  > $BAREBOX_OUTDIR/imx.info
+echo "Branch:   $BAREBOX_BRANCH" >> $BAREBOX_OUTDIR/imx.info
+if [ -d $BAREBOX_STADIR/applied_patches ]; then
+  echo " " >> $BAREBOX_OUTDIR/imx.info
+  echo "Applied patches:" >> $BAREBOX_OUTDIR/imx.info
+  for i in $(ls $BAREBOX_STADIR/applied_patches); do
+    echo " - $i" >> $BAREBOX_OUTDIR/imx.info
   done
+fi
+if [ -e $BAREBOX_STADIR/changed_files ]; then
+  echo " " >> $BAREBOX_OUTDIR/imx.info
+  echo "Modified or Added Files:" >> $BAREBOX_OUTDIR/imx.info
+  cat $BAREBOX_STADIR/changed_files >> $BAREBOX_OUTDIR/imx.info
 fi
 
 # Create patch
 if [ "$param_patch" = "true" ]; then
-  make distclean
-  git stash -u
-  git stash show -p > $OUT_DIR/${BNAME}/barebox_${BRANCH}.patch
-  git stash pop
+  cd $BAREBOX_SRCDIR
+  if [ -z "$(git status -s)" ]; then
+    echo
+    echo "[INFO] No changes in BareBox sources, patch not created !"
+  else
+    echo
+    echo "[INFO] Generate patch from all changes in BareBox sources"
+    git add --all > /dev/null
+    git stash -u  > /dev/null
+    git stash show -p > $BAREBOX_OUTDIR/9999_BAREBOX_${BAREBOX_BRANCH}_imx.patch
+    git stash pop > /dev/null
+    git reset     > /dev/null
+  fi
 fi
 
+# create config file
+echo "PROJECT=BAREBOX"                       > $CONFIG_FILE
+echo "CROSS_COMPILER=${CROSS_COMPILER}"     >> $CONFIG_FILE
+echo "BAREBOX_SRCURL=${BAREBOX_SRCURL}"     >> $CONFIG_FILE
+echo "BAREBOX_BRANCH=${BAREBOX_BRANCH}"     >> $CONFIG_FILE
+echo "BAREBOX_CONFIG=${BAREBOX_CONFIG}"     >> $CONFIG_FILE
+
 echo
 echo " ---------------------------------------------------------------"
-echo "          Congratulations, BareBox build was successful"
+echo "        Congratulations, U-Boot build was successful"
 echo " ---------------------------------------------------------------"
 echo " Created files are stored in:"
-echo " $OUT_DIR/i${BNAME}"
+echo " $BAREBOX_OUTDIR"
 echo " ---------------------------------------------------------------"
 echo
 
-cd $CWD
+cd $BAREBOX_CWD
+

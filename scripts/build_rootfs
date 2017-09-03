@@ -125,8 +125,8 @@ SelectDistro() {
   # <Name>|<Release>
   local DISTROS=("debian|jessie"
                  "debian|wheezy"
+                 "ubuntu|zesty"
                  "ubuntu|xenial"
-                 "ubuntu|trusty"
                  "ubuntu|lucid")
 
   local NAMES=() 

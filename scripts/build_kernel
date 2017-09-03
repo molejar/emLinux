@@ -343,7 +343,7 @@ if [ -e $KERNEL_STADIR/target_name ]; then
   KERNEL_BNAME=$(cat $KERNEL_STADIR/target_name)
 else
   if [ -z $KERNEL_BNAME ]; then 
-    BOARDS=($(ls arch/arm/boot/dts/imx[67]*.dts | sed 's/arch\/arm\/boot\/dts\///' | sed 's/.dts//'))
+    BOARDS=($(ls arch/arm/boot/dts/*imx[67]*.dts | sed 's/arch\/arm\/boot\/dts\///' | sed 's/.dts//'))
     [[ -z $BOARDS ]] && {
       eprint " Not supported kernel version, use other branch !"
       cd $KERNEL_CWD
@@ -467,17 +467,17 @@ mkdir -p $KERNEL_OUTDIR/$KERNEL_BNAME
 # Copy images, modules, ... into out directory
 cp $KERNEL_TMPDIR/arch/arm/boot/$KERNEL_IMAGE $KERNEL_OUTDIR/$KERNEL_BNAME
 cp $KERNEL_TMPDIR/.config $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.config
-make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_MOD_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME" modules_install
+make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_MOD_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs" modules_install
 # Remove simbolic links
-find $KERNEL_OUTDIR/$KERNEL_BNAME -type l | xargs rm -rf
+find $KERNEL_OUTDIR/$KERNEL_BNAME/rootfs -type l | xargs rm -rf
+# Export kernel headers
+make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_HDR_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs/usr" headers_install
 # Export DTB
-find $KERNEL_TMPDIR/arch/arm/boot/ -iname "${KERNEL_BNAME}*.dtb" -exec cp -v '{}' "$KERNEL_OUTDIR/$KERNEL_BNAME" \;
+find $KERNEL_TMPDIR/arch/arm/boot/ -iname "${KERNEL_BNAME}*.dtb" -exec cp -v '{}' "$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs" \;
 # Export Firmware
 if [ "$param_fware" = "true" ]; then
-  make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_FW_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/lib/firmware" firmware_install
+  make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_FW_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs/lib/firmware" firmware_install
 fi
-
-make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_HDR_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/usr" headers_install
 
 # Create kernel_info.txt file
 echo "GitRepo: $KERNEL_SRCURL" > $KERNEL_OUTDIR/$KERNEL_BNAME/${KERNEL_BNAME}.info

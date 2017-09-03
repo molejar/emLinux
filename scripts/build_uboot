@@ -240,11 +240,11 @@ else
       BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
       DIALOG_NAME='Branch'
     elif [ "$RET_VALUE" = "TAG" ]; then
-      BRANCHES=($(git tag -l | grep "rel"))
+      BRANCHES=($(git tag -l | grep -e "rel" -e "2016" -e "2017"))
       DIALOG_NAME='Tag'
     else
       BRANCHES=($(git branch -r | sed 's/origin\///' | sed 's/HEAD*.*//'))
-      BRANCHES+=($(git tag -l | grep "rel"))
+      BRANCHES+=($(git tag -l | grep -e "rel" -e "2016" -e "2017"))
       DIALOG_NAME='Branch or Tag'
     fi
 
@@ -316,7 +316,7 @@ if [ -e $UBOOT_STADIR/target_name ]; then
   UBOOT_BNAME=$(cat $UBOOT_STADIR/target_name)
 else
   if [ -z $UBOOT_BNAME ]; then
-    BOARDS=($(ls configs/mx[67]* configs/vf* | sed 's/configs\///' | sed 's/_defconfig//'))
+    BOARDS=($(ls configs/*mx[67]* configs/vf* | sed 's/configs\///' | sed 's/_defconfig//'))
     [[ -z $BOARDS ]] && {
       eprint " Not supported u-boot version, use other branch !"
       cd $UBOOT_CWD
