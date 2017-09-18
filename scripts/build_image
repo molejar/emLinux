@@ -73,8 +73,12 @@ echo
 [[ -z $param_sfree ]] || IFREE_SIZE=$param_sfree
 [[ -z $param_sfatp ]] || FAT16_SIZE=$param_sfatp
 # U-Boot settings
-POFFSET=1
 UBOOT_ENV="$UBOOT_DIR/u-boot_env.bin"
+# Partition Offset in MB
+PART_OFFSET=1
+# U-Boot image offset (>512) and size in Bytes
+BOOT_OFFSET=1024
+BOOT_SIZE=$((600 * 1024))
 # Log file name
 FLOG=$CWD/build_image.log
 
@@ -162,7 +166,7 @@ if [ ! -z $param_extr ]; then
     echo "Done"
 
     secho -n "[INFO] Extract UBOOT from SD image .................... "
-    dd if=$LOOP_DEV of=$UBOOT_DIR/u-boot.imx bs=512 seek=2 count=1500 conv=fsync >>$FLOG 2>&1
+    dd if=$LOOP_DEV of=$UBOOT_DIR/u-boot.imx bs=512 skip=$(($BOOT_OFFSET / 512)) count=$BOOT_SIZE conv=fsync >>$FLOG 2>&1
     if [ $? -ne 0 ]; then
       echo "Err"
       eprint "Can't extract u-boot.imx from SD card. See $FLOG"
@@ -332,8 +336,8 @@ secho -n "[INFO] Creating MBR and partitions in ${IMAGE_NAME} ...... "
 
 if [ "$SDTOOL" == "parted" ]; then
   parted -s ${IMAGE_NAME} mklabel msdos \
-    mkpart primary fat16 ${POFFSET}MiB ${FAT16_SIZE}MiB \
-    mkpart primary ext4 $((${POFFSET} + ${FAT16_SIZE}))MiB -- -1s \
+    mkpart primary fat16 ${PART_OFFSET}MiB ${FAT16_SIZE}MiB \
+    mkpart primary ext4 $((${PART_OFFSET} + ${FAT16_SIZE}))MiB -- -1s \
     set 1 boot on >>$FLOG 2>&1
 else
   fdisk ${IMAGE_NAME} >>$FLOG 2>&1 <<END
@@ -341,7 +345,7 @@ o
 n
 p
 1
-$((${POFFSET}*2*1024))
+$((${PART_OFFSET}*1024))
 +${FAT16_SIZE}M
 n
 p
@@ -380,7 +384,7 @@ if [ ! -z "$UBOOT_DIR" ]; then
   secho -n "[INFO] Copy u-boot into $IMAGE_NAME .................... "
 
   if [ -f "$UBOOT_IMG" ]; then
-    dd if=$UBOOT_IMG of=$LOOP_DEV bs=512 seek=2 conv=fsync >>$FLOG 2>&1
+    dd if=$UBOOT_IMG of=$LOOP_DEV bs=512 seek=$(($BOOT_OFFSET / 512)) conv=fsync >>$FLOG 2>&1
     if [ $? -ne 0 ]; then
       echo "Err"
       eprint "Can't write u-boot.imx into $IMAGE_NAME. See $FLOG"
@@ -434,7 +438,7 @@ secho -n "[INFO] Format FAT16 partition and copy Kernel + DTS ... "
 
 if [ $LOOP_TYPE == "NOPART" ]; then
   LOOP_DEV1=$LOOP_DEV
-  losetup -o $(($POFFSET * 1024 * 1024)) --sizelimit $(($FAT16_SIZE * 1024 * 1024)) ${LOOP_DEV} $IMAGE_NAME >>$FLOG 2>&1
+  losetup -o $(($PART_OFFSET * 1024 * 1024)) --sizelimit $(($FAT16_SIZE * 1024 * 1024)) ${LOOP_DEV} $IMAGE_NAME >>$FLOG 2>&1
   if [ $? -ne 0 ]; then
     echo "Err"
     eprint "Can't create $LOOP_DEV from $IMAGE_NAME. See $FLOG"
@@ -471,7 +475,7 @@ secho -n "[INFO] Format EXT4  partition and copy rootfs data .... "
 
 if [ $LOOP_TYPE == "NOPART" ]; then
   LOOP_DEV2=$LOOP_DEV
-  losetup -o $((($POFFSET + $FAT16_SIZE) * 1024 * 1024)) ${LOOP_DEV} $IMAGE_NAME >>$FLOG 2>&1
+  losetup -o $((($PART_OFFSET + $FAT16_SIZE) * 1024 * 1024)) ${LOOP_DEV} $IMAGE_NAME >>$FLOG 2>&1
   if [ $? -ne 0 ]; then
     echo "Err"
     eprint "Can't create $LOOP_DEV from $IMAGE_NAME. See $FLOG"
