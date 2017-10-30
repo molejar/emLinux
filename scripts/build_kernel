@@ -468,8 +468,6 @@ if [ ! -e "$KERNEL_TMPDIR/.config" ]; then
       KERNEL_CONFIG=${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}
     fi
     
-    #here
-    
     echo
     echo "[INFO] CONFIG = ${KERNEL_CONFIG}"
     echo
