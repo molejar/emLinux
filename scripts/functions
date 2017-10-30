@@ -314,5 +314,16 @@ find_toolchain() {
   fi
 }
 
+# Update defconfig file with params from array
+# Usage: update_defconfig <filename> <asociative array>
+update_defconfig(){
+    FILENAME="$1"
+    eval "declare -A DEFCONFIG_ARRAY="${2#*=}
+    
+    for key in ${!DEFCONFIG_ARRAY[@]}; do      
+        grep -q "^${key}" $FILENAME && sed -i "s/^${key}=.*/${key}=${DEFCONFIG_ARRAY[${key}]}/" $FILENAME || echo "${key}=${DEFCONFIG_ARRAY[${key}]}" >> $FILENAME
+    done
+}
+
 #################################################################################
 
