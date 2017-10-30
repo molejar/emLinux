@@ -132,6 +132,40 @@ if [ -z $KERNEL_URLS ]; then
                'https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git')
 fi
 
+if [ -z $OPTIONS_FOR_DEFCONFIG ]; then           
+  OPTIONS_FOR_DEFCONFIG=("SystemD"
+               "open_source_GPU_and_VPU"
+               "SystemD+open_source_GPU_and_VPU"
+               "Nothing")
+fi
+
+if [ -z $DEFCONFIG_OPTIONS_GPU_VPU ]; then
+  declare -A DEFCONFIG_OPTIONS_GPU_VPU=(
+                    ["CONFIG_DRM_ETNAVIV"]="y"
+                    ["CONFIG_DRM_ETNAVIV_REGISTER_LOGGING"]="y"
+                    ["CONFIG_VIDEO_CODA"]="m"
+                    )
+fi
+
+if [ -z $DEFCONFIG_OPTIONS_SYSTEMD ]; then
+  declare -A DEFCONFIG_OPTIONS_SYSTEMD=(
+                    ["CONFIG_DEVTMPFS"]="y"
+                    ["CONFIG_CGROUPS"]="y"
+                    ["CONFIG_INOTIFY_USER"]="y"
+                    ["CONFIG_SIGNALFD"]="y"
+                    ["CONFIG_TIMERFD"]="y"
+                    ["CONFIG_EPOLL"]="y"
+                    ["CONFIG_NET"]="y"
+                    ["CONFIG_SYSFS"]="y"
+                    ["CONFIG_PROC_FS"]="y"
+                    ["CONFIG_FHANDLE"]="y"
+                    ["CONFIG_FW_LOADER_USER_HELPER"]="n"
+                    ["CONFIG_SYSFS_DEPRECATED"]="n"
+                    ["CONFIG_UEVENT_HELPER_PATH"]='""'
+                    ["CONFIG_NAMESPACES"]="y"
+                    )
+fi
+
 # iMX load addresses
 if [ -z $KERNEL_LADDRS ]; then
   KERNEL_LADDRS=("mxs=0x40008000" 
@@ -402,6 +436,29 @@ if [ ! -e "$KERNEL_TMPDIR/.config" ]; then
         list_dialog 'Kernel Configs' "${MYCONFIGS[@]}"
         MYCONFIG=$RET_VALUE
       fi
+      
+        cp -f ${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG} ${KERNEL_SRCDIR}/arch/arm/configs/tmp_"$MYCONFIG"
+        MYCONFIG=tmp_"$MYCONFIG"
+        list_dialog 'Add to defcofig' "${OPTIONS_FOR_DEFCONFIG[@]}"
+        OPTION_FOR_DEFCONFIG=$RET_VALUE
+        
+        case "$OPTION_FOR_DEFCONFIG" in
+            "SystemD")
+                update_defconfig "${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}" "$(declare -p DEFCONFIG_OPTIONS_SYSTEMD)"
+                ;;
+            
+            "open_source_GPU_and_VPU")
+                update_defconfig "${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}" "$(declare -p DEFCONFIG_OPTIONS_GPU_VPU)"
+                ;;
+            
+            "SystemD+open_source_GPU_and_VPU")
+                update_defconfig "${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}" "$(declare -p DEFCONFIG_OPTIONS_SYSTEMD)"
+                update_defconfig "${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}" "$(declare -p DEFCONFIG_OPTIONS_GPU_VPU)"
+                ;;         
+            *)
+                ;;
+        esac
+      
       make O="$KERNEL_TMPDIR" ARCH="arm" $MYCONFIG || {
         eprint " Load default config: $MYCONFIG Error"
         cd $KERNEL_CWD
@@ -410,6 +467,9 @@ if [ ! -e "$KERNEL_TMPDIR/.config" ]; then
       echo ${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG} > $KERNEL_STADIR/default_config
       KERNEL_CONFIG=${KERNEL_SRCDIR}/arch/arm/configs/${MYCONFIG}
     fi
+    
+    #here
+    
     echo
     echo "[INFO] CONFIG = ${KERNEL_CONFIG}"
     echo
