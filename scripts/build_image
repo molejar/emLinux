@@ -78,6 +78,7 @@ UBOOT_ENV="$UBOOT_DIR/u-boot_env.bin"
 PART_OFFSET=1
 # U-Boot image offset (>512) and size in Bytes
 BOOT_OFFSET=1024
+# U-Boot image max size with env
 BOOT_SIZE=$((600 * 1024))
 # Log file name
 FLOG=$CWD/build_image.log
@@ -86,6 +87,7 @@ FLOG=$CWD/build_image.log
   [[ -d $UBOOT_DIR  ]] || mkdir $UBOOT_DIR
   [[ -d $FAT16_DIR  ]] || mkdir $FAT16_DIR
   [[ -d $EXT4_DIR   ]] || mkdir $EXT4_DIR
+  [[ -d $EXT4_DIR   ]] || mkdir $EXT4_DIR/mydata
   echo "INFO: Dirs was successfully created !"
   echo "INFO: Add your data and repeat execution of \"build_image\""
   echo
@@ -345,7 +347,7 @@ o
 n
 p
 1
-$((${PART_OFFSET}*1024))
+$(((${PART_OFFSET}*1024*1024)/512))
 +${FAT16_SIZE}M
 n
 p
@@ -535,7 +537,7 @@ if [ ! -z "$param_compress" ]; then
   echo "Done"
 fi
 
-[[ -f $FLOG ]] && rm -f $FLOG
+#[[ -f $FLOG ]] && rm -f $FLOG
 
 echo
 echo "------------------------------------------------------------"

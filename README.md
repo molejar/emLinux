@@ -41,7 +41,10 @@ The following picture describes general usage of this automatization scripts. As
 * **build_rootfs** - *Build minimal RootFS based on Debian packages*
 * **build_image** - *Create SD Card image from uboot, kernel and rootfs*
 
-With argument `-h` or `-?` you can print the command usage. Read [Wiki](https://github.com/molejar/emLinux/wiki) page for more details.
+With argument `-h` or `-?` you can print the command usage. Read [Wiki](https://github.com/molejar/emLinux/wiki) page for 
+more details.
+
+For embedded Linux development under Windows OS read [Step-By_step](doc/step_by_step.md) tutorial.
 
 ## Development
 
@@ -55,8 +58,8 @@ Clone this repository into your local disk (running Linux OS).
 In Debian based Linux distributions install all dependencies and execute `install.sh` script.
 
 ```bash
-   $ sudo apt-get install build-essential, u-boot-tools, qemu-user-static, binfmt-support
-   $ sudo apt-get install debootstrap, binutils, parted, realpath, git, lzop, gzip, zip
+   $ sudo apt-get install build-essential, u-boot-tools, device-tree-compiler, qemu-user-static
+   $ sudo apt-get install binfmt-support, debootstrap, binutils, parted, realpath, git, lzop, gzip, zip
 
    $ sudo ./install.sh
 ```

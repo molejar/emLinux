@@ -468,7 +468,7 @@ if [ -z $ROOTFS_PASSWD ] && [ -f $ROOTFS_TMPDIR/etc/ssh/sshd_config ]; then
   sed -ri s/^#?PasswordAuthentication\ yes/PasswordAuthentication\ no/ -i $ROOTFS_TMPDIR/etc/ssh/sshd_config
 fi
 
-if [ -d $ROOTFS_TMPDIR/selinux ]; then
+if [ ! -d $ROOTFS_TMPDIR/selinux ]; then
   echo "==> Fix selinux"
   mkdir $ROOTFS_TMPDIR/selinux
 fi

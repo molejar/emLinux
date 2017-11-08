@@ -531,7 +531,7 @@ find $KERNEL_OUTDIR/$KERNEL_BNAME/rootfs -type l | xargs rm -rf
 # Export kernel headers
 make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_HDR_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs/usr" headers_install
 # Export DTB
-find $KERNEL_TMPDIR/arch/arm/boot/ -iname "${KERNEL_BNAME}*.dtb" -exec cp -v '{}' "$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs" \;
+find $KERNEL_TMPDIR/arch/arm/boot/ -iname "${KERNEL_BNAME}*.dtb" -exec cp -v '{}' "$KERNEL_OUTDIR/$KERNEL_BNAME" \;
 # Export Firmware
 if [ "$param_fware" = "true" ]; then
   make O="$KERNEL_TMPDIR" ARCH="arm" CROSS_COMPILE="$CROSS_COMPILER" INSTALL_FW_PATH="$KERNEL_OUTDIR/$KERNEL_BNAME/rootfs/lib/firmware" firmware_install
