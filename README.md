@@ -46,6 +46,9 @@ more details.
 
 For embedded Linux development under Windows OS read [Step-By_step](doc/step_by_step.md) tutorial.
 
+## GPU and VPU support
+Description for GPU and VPU is [here](gpu_vpu/README.md)
+
 ## Development
 
 Clone this repository into your local disk (running Linux OS).
@@ -72,8 +75,6 @@ In other Linux distributions use [Virtual Machine Builder](https://github.com/mo
 ```
 
 ## TODO
-
-- Add i.MX GPU and VPU support into generated rootfs
 
 ## Usefull Links
 
