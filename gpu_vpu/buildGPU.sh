@@ -1,10 +1,5 @@
 #!/bin/bash
 
-#dpkg-reconfigure locales
-#date -s "8 NOV 2017 15:16:00"
-#DISPLAY=:0.0 glxgears -info
-
-
 # Selection dialog
 # Usage: list_dialog <title> <items>
 # Return: item in RET_VALUE variable
@@ -152,7 +147,28 @@ make || exit 1
 make install
 cd ..
 
-cp ./xorg.conf /etc/X11/xorg.conf
+cat << EOT > /etc/X11/xorg.conf
+Section "Device"
+    Identifier  "Driver0"
+    Screen      0
+    Driver      "armada"
+# Support hotplugging displays?
+    Option      "Hotplug"   "TRUE"
+# Support hardware cursor if available?
+    Option      "HWCursor"  "TRUE"
+# Use GPU acceleration?
+    Option      "UseGPU"    "TRUE"
+# Provide Xv interfaces?
+    Option      "XvAccel"   "TRUE"
+# Prefer overlay for Xv (TRUE for armada-drm, FALSE for imx-drm)
+    Option      "XvPreferOverlay"   "FALSE"
+# Which accelerator module to load (automatically found if commented out)
+    Option      "AccelModule"   "etnadrm_gpu"
+#   Option      "AccelModule" "etnaviv_gpu"
+# Support DRI2 interfaces?
+    Option      "DRI"   "TRUE"
+EndSection
+EOT
 #add user ubuntu to group video
 usermod -a -G video ubuntu
 
